@@ -21,6 +21,7 @@
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::dbg_macro)]
 
+pub mod authorize;
 pub mod error;
 pub mod evaluate;
 pub mod math;
