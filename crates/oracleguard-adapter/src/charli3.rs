@@ -644,6 +644,57 @@ mod tests {
         }
     }
 
+    // ---- Slice 05: provenance non-interference at the adapter layer ----
+
+    #[test]
+    fn provenance_only_datum_mutations_do_not_change_eval() {
+        // Two synthetic datums differ only in the provenance fields
+        // (timestamp and expiry). The eval half of the normalization
+        // output must be byte-identical between them.
+        let a_bytes = build_aggstate_cbor(258_000, 1_000_000, 2_000_000);
+        let b_bytes = build_aggstate_cbor(258_000, 9_999_999_999, 9_999_999_999 + 600_000);
+        assert_ne!(a_bytes, b_bytes, "builder must actually differ");
+
+        let (eval_a, prov_a) =
+            normalize_aggstate_datum(&a_bytes, GOLDEN_UTXO_REF).expect("a");
+        let (eval_b, prov_b) =
+            normalize_aggstate_datum(&b_bytes, GOLDEN_UTXO_REF).expect("b");
+
+        assert_eq!(eval_a, eval_b, "eval must be identical");
+        assert_ne!(prov_a, prov_b, "provenance must differ to make the test load-bearing");
+    }
+
+    #[test]
+    fn provenance_only_datum_mutations_yield_identical_eval_canonical_bytes() {
+        let a_bytes = build_aggstate_cbor(258_000, 1_000_000, 2_000_000);
+        let b_bytes = build_aggstate_cbor(258_000, 5_000_000, 6_000_000);
+
+        let (eval_a, _) = normalize_aggstate_datum(&a_bytes, GOLDEN_UTXO_REF).expect("a");
+        let (eval_b, _) = normalize_aggstate_datum(&b_bytes, GOLDEN_UTXO_REF).expect("b");
+
+        let encoded_a = postcard::to_allocvec(&eval_a).expect("encode a");
+        let encoded_b = postcard::to_allocvec(&eval_b).expect("encode b");
+        assert_eq!(encoded_a, encoded_b);
+    }
+
+    #[test]
+    fn utxo_ref_does_not_change_eval() {
+        // `aggregator_utxo_ref` is a provenance input supplied to the
+        // normalizer. Changing it must not alter the eval output.
+        let (eval_a, _) = normalize_aggstate_datum(GOLDEN, [0x00; 32]).expect("a");
+        let (eval_b, _) = normalize_aggstate_datum(GOLDEN, [0xFF; 32]).expect("b");
+        assert_eq!(eval_a, eval_b);
+    }
+
+    #[test]
+    fn utxo_ref_changes_provenance_only() {
+        let (_, prov_a) = normalize_aggstate_datum(GOLDEN, [0x00; 32]).expect("a");
+        let (_, prov_b) = normalize_aggstate_datum(GOLDEN, [0xFF; 32]).expect("b");
+        assert_ne!(prov_a.aggregator_utxo_ref, prov_b.aggregator_utxo_ref);
+        assert_eq!(prov_a.timestamp_unix, prov_b.timestamp_unix);
+        assert_eq!(prov_a.expiry_unix, prov_b.expiry_unix);
+    }
+
     #[test]
     fn check_freshness_is_pure_wrt_now_argument() {
         // Two calls with the same provenance and the same now produce

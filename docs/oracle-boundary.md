@@ -83,7 +83,20 @@ Changes to any provenance-only field MUST NOT alter:
   `oracleguard_adapter::charli3::normalize_aggstate_datum` for the same
   on-chain price.
 
-These invariants are enforced by tests; see Slice 05.
+These invariants are enforced mechanically. The test map below pins
+each provenance mutation to the test that locks its non-interference:
+
+| Provenance mutation | Locked by |
+|---|---|
+| `oracle_provenance.timestamp_unix` → any value | `oracleguard_schemas::encoding::tests::oracle_provenance_timestamp_does_not_change_intent_id`; `tests/provenance_non_interference.rs::identity_bytes_are_invariant_under_timestamp_mutation` |
+| `oracle_provenance.expiry_unix` → any value | `oracleguard_schemas::encoding::tests::oracle_provenance_expiry_does_not_change_intent_id`; `tests/provenance_non_interference.rs::identity_bytes_are_invariant_under_expiry_mutation` |
+| `oracle_provenance.aggregator_utxo_ref` → any value | `oracleguard_schemas::encoding::tests::oracle_provenance_utxo_ref_does_not_change_intent_id`; `tests/provenance_non_interference.rs::identity_bytes_are_invariant_under_utxo_ref_mutation`; `oracleguard_adapter::charli3::tests::utxo_ref_does_not_change_eval` |
+| CBOR datum provenance (`price_map[1]`, `price_map[2]`) → any value | `oracleguard_adapter::charli3::tests::provenance_only_datum_mutations_do_not_change_eval`; `provenance_only_datum_mutations_yield_identical_eval_canonical_bytes` |
+
+Dual: the full canonical encoding of the intent (not its identity
+projection) IS provenance-sensitive by design, so evidence bundles
+retain the provenance bytes. This is locked by
+`tests/provenance_non_interference.rs::full_intent_bytes_change_when_provenance_changes`.
 
 ## Hard rules
 
