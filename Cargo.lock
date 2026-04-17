@@ -184,6 +184,8 @@ name = "oracleguard-policy"
 version = "0.0.0"
 dependencies = [
  "oracleguard-schemas",
+ "postcard",
+ "serde",
 ]
 
 [[package]]
