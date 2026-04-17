@@ -110,11 +110,15 @@ silently reinterpret it.
 
 ## 6. Threshold bands
 
-| Condition                                 | Band              | Basis points |
-|-------------------------------------------|-------------------|--------------|
-| `price_microusd >= 500_000`               | `BAND_HIGH_BPS`   | `10_000`     |
-| `price_microusd >= 350_000`               | `BAND_MID_BPS`    | `7_500`      |
-| `price_microusd <  350_000`               | `BAND_LOW_BPS`    | `5_000`      |
+| Condition                                  | Constant          | Band constant    | Basis points |
+|--------------------------------------------|-------------------|------------------|--------------|
+| `price_microusd >= THRESHOLD_HIGH_MICROUSD`| `500_000`         | `BAND_HIGH_BPS`  | `10_000`     |
+| `price_microusd >= THRESHOLD_MID_MICROUSD` | `350_000`         | `BAND_MID_BPS`   | `7_500`      |
+| `price_microusd <  THRESHOLD_MID_MICROUSD` | —                 | `BAND_LOW_BPS`   | `5_000`      |
+
+The constants live in `oracleguard_policy::math`. Band selection is
+implemented by `select_release_band_bps(price_microusd)`, which is
+total over `u64` and pure.
 
 Comparisons are inclusive on the lower bound. `validate_oracle_fact_eval`
 rejects `price_microusd == 0` before the evaluator runs, so the
