@@ -43,6 +43,26 @@ A stale datum never reaches the evaluator at all. Once a datum is
 accepted, `expiry_unix` plays no further role — the release-cap math
 sees only `price_microusd`.
 
+## Canonical identifier mapping
+
+Two 16-byte identifiers are pinned in `oracleguard_schemas::oracle`:
+
+| Label       | Constant               | Bytes                                |
+|-------------|------------------------|--------------------------------------|
+| `"ADA/USD"` | `ASSET_PAIR_ADA_USD`   | `b"ADA/USD"` + nine zero bytes       |
+| `"charli3"` | `SOURCE_CHARLI3`       | `b"charli3"` + nine zero bytes       |
+
+`canonical_asset_pair` and `canonical_source` are the only sanctioned
+path from a human-readable label to these constants, and they accept
+only the exact strings in the table above. No casing variant, no
+whitespace-padded form, no punctuation variant (`ADA-USD`, `ADA_USD`)
+is recognized. Any label outside this table returns `None` and must
+not reach the evaluator.
+
+Adding a new pair or source is a schema-surface change: it requires
+both a new constant, a new match arm in the relevant helper, an
+updated row in this table, and a test covering the new mapping.
+
 ## Cardano Preprod mapping (Charli3)
 
 | On-chain field       | Domain          | Maps to                                                |

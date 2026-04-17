@@ -55,6 +55,46 @@ pub struct OracleFactProvenanceV1 {
     pub aggregator_utxo_ref: [u8; 32],
 }
 
+/// Canonical 16-byte identifier for the ADA/USD asset pair.
+///
+/// The seven ASCII bytes of `"ADA/USD"` followed by nine zero bytes.
+/// All authoritative oracle paths use this exact byte sequence; no
+/// alias, casing variant, or whitespace-padded form is accepted.
+pub const ASSET_PAIR_ADA_USD: [u8; 16] = *b"ADA/USD\0\0\0\0\0\0\0\0\0";
+
+/// Canonical 16-byte identifier for the Charli3 pull-oracle source.
+///
+/// The seven ASCII bytes of `"charli3"` followed by nine zero bytes.
+/// All authoritative oracle paths use this exact byte sequence; no
+/// alias, casing variant, or whitespace-padded form is accepted.
+pub const SOURCE_CHARLI3: [u8; 16] = *b"charli3\0\0\0\0\0\0\0\0\0";
+
+/// Map a human label to its canonical 16-byte asset-pair identifier.
+///
+/// The mapping is deliberately strict: only the exact label
+/// `"ADA/USD"` returns `Some(ASSET_PAIR_ADA_USD)`. Any alias, casing
+/// variant, or padded form returns `None`. This prevents two
+/// semantically equivalent labels from producing different
+/// evaluation-domain identity bytes.
+pub fn canonical_asset_pair(label: &str) -> Option<[u8; 16]> {
+    match label {
+        "ADA/USD" => Some(ASSET_PAIR_ADA_USD),
+        _ => None,
+    }
+}
+
+/// Map a human label to its canonical 16-byte oracle-source identifier.
+///
+/// Strict mapping, for the same reasons as [`canonical_asset_pair`].
+/// Only `"charli3"` maps; `"Charli3"`, `" charli3"`, and any other
+/// variant return `None`.
+pub fn canonical_source(label: &str) -> Option<[u8; 16]> {
+    match label {
+        "charli3" => Some(SOURCE_CHARLI3),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -121,5 +161,93 @@ mod tests {
         let a = sample_provenance();
         let b = a;
         assert_eq!(a, b);
+    }
+
+    // ---- Slice 03: canonical asset-pair and source identity ----
+
+    #[test]
+    fn asset_pair_constant_starts_with_ascii_ada_usd() {
+        assert_eq!(&ASSET_PAIR_ADA_USD[..7], b"ADA/USD");
+        assert_eq!(&ASSET_PAIR_ADA_USD[7..], &[0u8; 9]);
+    }
+
+    #[test]
+    fn source_constant_starts_with_ascii_charli3() {
+        assert_eq!(&SOURCE_CHARLI3[..7], b"charli3");
+        assert_eq!(&SOURCE_CHARLI3[7..], &[0u8; 9]);
+    }
+
+    #[test]
+    fn canonical_asset_pair_accepts_exact_ada_usd_label() {
+        assert_eq!(canonical_asset_pair("ADA/USD"), Some(ASSET_PAIR_ADA_USD));
+    }
+
+    #[test]
+    fn canonical_asset_pair_rejects_casing_variants() {
+        assert_eq!(canonical_asset_pair("ada/usd"), None);
+        assert_eq!(canonical_asset_pair("Ada/Usd"), None);
+        assert_eq!(canonical_asset_pair("ADA/usd"), None);
+    }
+
+    #[test]
+    fn canonical_asset_pair_rejects_whitespace_variants() {
+        assert_eq!(canonical_asset_pair(" ADA/USD"), None);
+        assert_eq!(canonical_asset_pair("ADA/USD "), None);
+        assert_eq!(canonical_asset_pair("ADA / USD"), None);
+    }
+
+    #[test]
+    fn canonical_asset_pair_rejects_separator_variants() {
+        assert_eq!(canonical_asset_pair("ADA-USD"), None);
+        assert_eq!(canonical_asset_pair("ADA_USD"), None);
+        assert_eq!(canonical_asset_pair("ADAUSD"), None);
+    }
+
+    #[test]
+    fn canonical_asset_pair_rejects_unknown_pairs() {
+        assert_eq!(canonical_asset_pair("BTC/USD"), None);
+        assert_eq!(canonical_asset_pair(""), None);
+    }
+
+    #[test]
+    fn canonical_source_accepts_exact_charli3_label() {
+        assert_eq!(canonical_source("charli3"), Some(SOURCE_CHARLI3));
+    }
+
+    #[test]
+    fn canonical_source_rejects_casing_variants() {
+        assert_eq!(canonical_source("Charli3"), None);
+        assert_eq!(canonical_source("CHARLI3"), None);
+        assert_eq!(canonical_source("charli_3"), None);
+    }
+
+    #[test]
+    fn canonical_source_rejects_whitespace_variants() {
+        assert_eq!(canonical_source(" charli3"), None);
+        assert_eq!(canonical_source("charli3 "), None);
+    }
+
+    #[test]
+    fn canonical_source_rejects_unknown_providers() {
+        assert_eq!(canonical_source("pyth"), None);
+        assert_eq!(canonical_source(""), None);
+    }
+
+    #[test]
+    fn canonical_constants_round_trip_through_postcard() {
+        // The constants must survive canonical encoding unchanged.
+        // Any postcard-version bump that alters fixed-array layout
+        // would surface here and be treated as a canonical-byte change.
+        let eval = OracleFactEvalV1 {
+            asset_pair: ASSET_PAIR_ADA_USD,
+            price_microusd: 1,
+            source: SOURCE_CHARLI3,
+        };
+        let bytes = postcard::to_allocvec(&eval).expect("encode");
+        let (decoded, rest): (OracleFactEvalV1, _) =
+            postcard::take_from_bytes(&bytes).expect("decode");
+        assert!(rest.is_empty());
+        assert_eq!(decoded.asset_pair, ASSET_PAIR_ADA_USD);
+        assert_eq!(decoded.source, SOURCE_CHARLI3);
     }
 }
