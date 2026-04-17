@@ -163,4 +163,161 @@ mod tests {
             _ => unreachable!(),
         }
     }
+
+    // ---- Slice 02 — routing rule invariance ----
+
+    use crate::effect::{AssetIdV1, CardanoAddressV1};
+    use crate::intent::INTENT_VERSION_V1;
+    use crate::oracle::{
+        OracleFactEvalV1, OracleFactProvenanceV1, ASSET_PAIR_ADA_USD, SOURCE_CHARLI3,
+    };
+
+    fn sample_intent() -> DisbursementIntentV1 {
+        DisbursementIntentV1 {
+            intent_version: INTENT_VERSION_V1,
+            policy_ref: [0x11; 32],
+            allocation_id: [0x22; 32],
+            requester_id: [0x33; 32],
+            oracle_fact: OracleFactEvalV1 {
+                asset_pair: ASSET_PAIR_ADA_USD,
+                price_microusd: 450_000,
+                source: SOURCE_CHARLI3,
+            },
+            oracle_provenance: OracleFactProvenanceV1 {
+                timestamp_unix: 1_713_000_000_000,
+                expiry_unix: 1_713_000_300_000,
+                aggregator_utxo_ref: [0x44; 32],
+            },
+            requested_amount_lovelace: 700_000_000,
+            destination: CardanoAddressV1 {
+                bytes: [0x55; 57],
+                length: 57,
+            },
+            asset: AssetIdV1::ADA,
+        }
+    }
+
+    #[test]
+    fn route_returns_ocu_id_for_sample_intent() {
+        assert_eq!(route(&sample_intent()), DISBURSEMENT_OCU_ID);
+    }
+
+    #[test]
+    fn route_is_deterministic_across_calls() {
+        let intent = sample_intent();
+        let a = route(&intent);
+        let b = route(&intent);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn route_is_invariant_under_destination_change() {
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.destination = CardanoAddressV1 {
+            bytes: [0xAB; 57],
+            length: 29,
+        };
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_is_invariant_under_oracle_source_change() {
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.oracle_fact.source = *b"otherfeed\0\0\0\0\0\0\0";
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_is_invariant_under_oracle_price_change() {
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.oracle_fact.price_microusd = 1;
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_is_invariant_under_oracle_asset_pair_change() {
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.oracle_fact.asset_pair = *b"ETH/USD\0\0\0\0\0\0\0\0\0";
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_is_invariant_under_provenance_change() {
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.oracle_provenance.timestamp_unix = 0;
+        m.oracle_provenance.expiry_unix = 0;
+        m.oracle_provenance.aggregator_utxo_ref = [0xFF; 32];
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_is_invariant_under_requested_amount_change() {
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.requested_amount_lovelace = 1;
+        assert_eq!(route(&m), base);
+        m.requested_amount_lovelace = u64::MAX;
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_is_invariant_under_asset_change() {
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.asset = AssetIdV1 {
+            policy_id: [0xAB; 28],
+            asset_name: [0u8; 32],
+            asset_name_len: 0,
+        };
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_is_invariant_under_requester_id_change() {
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.requester_id = [0xAA; 32];
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_is_invariant_under_allocation_id_change() {
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.allocation_id = [0xBB; 32];
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_is_invariant_under_policy_ref_change() {
+        // policy_ref is an authorization input, not a routing key. The
+        // anchor gate consumes it; routing must not.
+        let base = route(&sample_intent());
+        let mut m = sample_intent();
+        m.policy_ref = [0xCC; 32];
+        assert_eq!(route(&m), base);
+    }
+
+    #[test]
+    fn route_sweep_over_many_mutations_yields_single_target() {
+        // Compose multiple non-authority field changes at once. The
+        // sweep pins that no combination of field variation reaches a
+        // second routing target.
+        let base = route(&sample_intent());
+        for (i, _) in (0u64..64).enumerate() {
+            let mut m = sample_intent();
+            m.destination.bytes[0] = i as u8;
+            m.oracle_fact.price_microusd = i as u64 + 1;
+            m.oracle_provenance.timestamp_unix = i as u64;
+            m.requested_amount_lovelace = (i as u64).wrapping_add(1);
+            m.requester_id[0] = i as u8;
+            m.allocation_id[0] = i as u8;
+            assert_eq!(route(&m), base);
+        }
+    }
 }
