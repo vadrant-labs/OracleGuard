@@ -78,35 +78,37 @@ Forbidden at all times:
 If `scripts/check_deps.sh` and this table ever disagree, the script is the
 source of truth; update the table to match, not the other way around.
 
-## Cluster 3 landing zones
+## Cluster 4 landing zones
 
-Cluster 2 — Canonical Policy Identity and Intent Schema — is closed.
-See `docs/cluster-2-closeout.md` for the handoff record; the pinned
-surface it produced is:
+Cluster 3 — Oracle Fact Normalization and Provenance Separation — is
+closed. See `docs/cluster-3-closeout.md` for the handoff record; the
+pinned surface it produced is:
 
-- `DisbursementIntentV1`, `OracleFactEvalV1`, `OracleFactProvenanceV1`,
-  `CardanoAddressV1`, `AssetIdV1` → `crates/oracleguard-schemas/src/`
-- Canonical `postcard` encoding and BLAKE3-keyed `intent_id` →
-  `crates/oracleguard-schemas/src/encoding.rs`
-- `PolicyRef` and `derive_policy_ref` →
-  `crates/oracleguard-schemas/src/policy.rs`
-- Golden fixtures → `fixtures/policy_v1.canonical.bytes`,
-  `fixtures/intent_v1_golden.postcard`
-
-Cluster 3 — Oracle Fact Normalization and Provenance Separation — lands
-its work at:
-
-- Oracle normalization semantics refinement →
-  `crates/oracleguard-schemas/src/oracle.rs`
-- Charli3 microusd normalization shell →
+- `OracleFactEvalV1`, `OracleFactProvenanceV1`, canonical identifier
+  constants (`ASSET_PAIR_ADA_USD`, `SOURCE_CHARLI3`), and strict
+  canonicalizers → `crates/oracleguard-schemas/src/oracle.rs`
+- `DisbursementReasonCode` (8 variants, pinned discriminants) and
+  `validate_oracle_fact_eval` → `crates/oracleguard-schemas/src/reason.rs`
+- Charli3 AggState CBOR parser, `normalize_aggstate_datum`,
+  `normalize_parse_validate`, and `check_freshness` →
   `crates/oracleguard-adapter/src/charli3.rs`
-- Deterministic rejection reason codes → extend
-  `crates/oracleguard-schemas/src/reason.rs`
-- Oracle-related fixtures → `fixtures/`
+- Golden AggState datum fixture (live Preprod capture) →
+  `fixtures/charli3/aggstate_v1_golden.cbor` +
+  `fixtures/charli3/aggstate_v1_golden.capture.md`
+- Oracle-boundary doc (field roles, canonical identifier mapping,
+  intent construction pattern, non-interference test map) →
+  `docs/oracle-boundary.md`
 
-See `docs/cluster-1-closeout.md` for the Cluster 1 → Cluster 2 handoff
-record and `docs/cluster-2-closeout.md` for the Cluster 2 → Cluster 3
-handoff record.
+Cluster 4 — Release-Cap Evaluation Logic — lands its work at:
+
+- Integer release-cap math → `crates/oracleguard-policy/src/math.rs`
+- Evaluator entry point `evaluate_disbursement` →
+  `crates/oracleguard-policy/src/evaluate.rs`
+- Evaluator error surface mapping onto `DisbursementReasonCode` →
+  `crates/oracleguard-policy/src/error.rs`
+
+See `docs/cluster-1-closeout.md`, `docs/cluster-2-closeout.md`, and
+`docs/cluster-3-closeout.md` for the prior handoff records.
 
 ## Private integration posture
 
