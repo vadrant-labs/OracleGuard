@@ -1,0 +1,15 @@
+[package]
+name = "oracleguard-verifier"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Offline OracleGuard evidence bundle verifier."
+
+[dependencies]
+oracleguard-schemas = { path = "../oracleguard-schemas" }
+oracleguard-policy = { path = "../oracleguard-policy" }
+
+[lints]
+workspace = true

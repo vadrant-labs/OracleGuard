@@ -1,0 +1,11 @@
+[package]
+name = "oracleguard-schemas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Canonical public semantic types for OracleGuard."
+
+[lints]
+workspace = true

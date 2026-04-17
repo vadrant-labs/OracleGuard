@@ -1,0 +1,44 @@
+# Rust build artifacts
+/target
+**/target
+Cargo.lock.bak
+*.rs.bk
+
+# Secrets and keys
+*.key
+*.seed
+*.mnemonic
+*.secret
+.keys/
+secrets/
+
+# Wallet files
+*.skey
+*.vkey
+*.addr
+
+# Charli3 configs with wallet mnemonics
+*-preprod.yml
+*-mainnet.yml
+!configs/*.example.yml
+
+# Environment files
+.env
+.env.*
+
+# Cardano transaction artifacts
+*.raw
+*.signed
+*.cbor
+
+# Claude Code project files
+CLAUDE.md
+.claude/
+
+# Cluster planning docs (internal planning, not public)
+docs/clusters/
+
+# OS and editor
+.DS_Store
+*.swp
+*~

@@ -1,0 +1,60 @@
+#!/bin/bash
+# Pre-commit secret scan.
+# Rejects staged content matching high-confidence secret patterns for
+# Cardano/Ziranity/oracle-node material.
+set -u
+
+fail=0
+staged_files=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$staged_files" ]; then
+  exit 0
+fi
+
+# Reject staging of known-sensitive file extensions.
+for f in $staged_files; do
+  case "$f" in
+    *.key|*.skey|*.vkey|*.secret|*.seed|*.mnemonic|.env|.env.*)
+      echo "ERROR: refusing to stage sensitive file: $f"
+      fail=1
+      ;;
+  esac
+done
+
+# Scan staged content for secret patterns.
+# Get diff content limited to added lines.
+diff_added=$(git diff --cached --no-color --unified=0 | grep -E '^\+' | grep -vE '^\+\+\+')
+
+# 24-word BIP39-style mnemonic on a single line (rough heuristic).
+if printf '%s\n' "$diff_added" | grep -iE '(mnemonic[[:space:]]*[:=]|seed[[:space:]]*phrase)[[:space:]]*"?([a-z]+[[:space:]]+){11,23}[a-z]+' >/dev/null; then
+  echo "ERROR: staged content looks like a mnemonic / seed phrase."
+  fail=1
+fi
+
+# Cardano signing key cborHex with 5820 prefix (Ed25519 32-byte payload marker).
+if printf '%s\n' "$diff_added" | grep -E '"cborHex"[[:space:]]*:[[:space:]]*"5820[0-9a-fA-F]{64}' >/dev/null; then
+  echo "ERROR: staged content contains a Cardano cborHex signing key payload."
+  fail=1
+fi
+
+# 64+ contiguous hex chars in key-like context.
+if printf '%s\n' "$diff_added" | grep -iE '(private[_-]?key|signing[_-]?key|secret[_-]?key)[^\n]{0,32}[0-9a-f]{64,}' >/dev/null; then
+  echo "ERROR: staged content contains what looks like raw private key bytes."
+  fail=1
+fi
+
+# Bearer tokens (excluding obvious placeholders).
+if printf '%s\n' "$diff_added" | grep -E 'Authorization:[[:space:]]*Bearer[[:space:]]+[A-Za-z0-9._~+/=-]{20,}' | grep -ivE '(EXAMPLE|PLACEHOLDER|XXXX|TODO|YOUR_TOKEN)' >/dev/null; then
+  echo "ERROR: staged content contains a Bearer token."
+  fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo
+  echo "Secret scan failed. If this is a false positive, inspect with:"
+  echo "  git diff --cached"
+  echo "and adjust or move the content out of the public tree."
+  exit 1
+fi
+
+exit 0

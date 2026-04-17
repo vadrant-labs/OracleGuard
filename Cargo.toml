@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/oracleguard-schemas",
+    "crates/oracleguard-policy",
+    "crates/oracleguard-adapter",
+    "crates/oracleguard-verifier",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/vadrant-labs/OracleGuard"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+todo = "deny"
+unimplemented = "deny"

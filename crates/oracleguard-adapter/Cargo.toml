@@ -1,0 +1,15 @@
+[package]
+name = "oracleguard-adapter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OracleGuard shell adapter: Charli3 fetch, Ziranity submit, Cardano settlement."
+
+[dependencies]
+oracleguard-schemas = { path = "../oracleguard-schemas" }
+oracleguard-policy = { path = "../oracleguard-policy" }
+
+[lints]
+workspace = true
