@@ -9,6 +9,7 @@ description = "Canonical public semantic types for OracleGuard."
 
 [dependencies]
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
+sha2 = { version = "0.10", default-features = false }
 
 [lints]
 workspace = true

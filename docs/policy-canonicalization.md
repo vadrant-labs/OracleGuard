@@ -43,13 +43,43 @@ Only object key order and whitespace are normalized.
 The golden fixture is the single byte sequence a reader of the public
 repo may feed into a hash to check `policy_ref` by hand.
 
-## Relationship to `policy_ref`
+## `policy_ref` derivation
 
-Slice 02 of Cluster 2 defines `policy_ref = SHA-256(canonical_bytes)`.
-This module is the only public path from a JSON policy document to the
-bytes that feed that hash. No other OracleGuard crate may produce
-`policy_ref`-bearing bytes by an independent route; the adapter and
-verifier consume `policy_ref` values, they do not derive them.
+`policy_ref` is the authoritative 32-byte public identity of a governing
+policy. It is defined as:
+
+```
+policy_ref = SHA-256(canonicalize_policy_json(policy_document))
+```
+
+The Rust type is `oracleguard_schemas::policy::PolicyRef([u8; 32])`, and
+the only sanctioned derivation path is
+`oracleguard_schemas::policy::derive_policy_ref`. No other OracleGuard
+crate may produce `policy_ref`-bearing bytes by an independent route;
+the adapter and verifier consume `PolicyRef` values, they do not derive
+them.
+
+### Where `policy_ref` appears
+
+- Embedded in every `DisbursementIntentV1` as the `policy_ref` field
+  (Cluster 2 slice 03).
+- Recorded alongside every evaluator decision so evidence records can
+  be replayed against the same canonical policy bytes.
+- Carried in every evidence bundle so an offline verifier can
+  independently redo the `canonicalize → SHA-256 → compare` check.
+
+### Verifying `policy_ref` by hand
+
+A reader of this repo can reproduce the golden `policy_ref` of the MVP
+fixture without running any OracleGuard code:
+
+```
+sha256sum fixtures/policy_v1.canonical.bytes
+# → 56a7bb9793e40aa54402ce67fcbce17dee93b6713c76ccba6c02c11f749968c2
+```
+
+That value is also pinned as a constant in
+`crates/oracleguard-schemas/src/policy.rs`'s test module.
 
 ## Versioning
 
