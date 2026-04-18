@@ -310,6 +310,28 @@ impl AuthorizationResult {
     }
 }
 
+/// Convert a policy-domain [`AuthorizationResult`] into the
+/// evidence-domain
+/// [`oracleguard_schemas::evidence::AuthorizationSnapshotV1`].
+///
+/// The conversion is a structural field copy. It exists on the policy
+/// side so `oracleguard-schemas` can pin the evidence shape without
+/// depending on `oracleguard-policy`. The evidence-domain mirror is
+/// byte-identical in meaning: `Authorized { effect }` and
+/// `Denied { reason, gate }` copy through verbatim.
+impl From<AuthorizationResult> for oracleguard_schemas::evidence::AuthorizationSnapshotV1 {
+    fn from(value: AuthorizationResult) -> Self {
+        match value {
+            AuthorizationResult::Authorized { effect } => {
+                oracleguard_schemas::evidence::AuthorizationSnapshotV1::Authorized { effect }
+            }
+            AuthorizationResult::Denied { reason, gate } => {
+                oracleguard_schemas::evidence::AuthorizationSnapshotV1::Denied { reason, gate }
+            }
+        }
+    }
+}
+
 /// Run the full three-gate authorization closure and return a typed
 /// [`AuthorizationResult`].
 ///
