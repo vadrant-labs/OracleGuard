@@ -404,14 +404,20 @@ mod tests {
     fn matches_url_concatenates_base_and_path() {
         let e = KupoEndpoint::new("http://example.test:1442");
         let url = matches_url(&e, "addr_test1abc");
-        assert_eq!(url, "http://example.test:1442/matches/addr_test1abc?unspent");
+        assert_eq!(
+            url,
+            "http://example.test:1442/matches/addr_test1abc?unspent"
+        );
     }
 
     #[test]
     fn matches_url_strips_trailing_slash() {
         let e = KupoEndpoint::new("http://example.test:1442/");
         let url = matches_url(&e, "addr_test1abc");
-        assert_eq!(url, "http://example.test:1442/matches/addr_test1abc?unspent");
+        assert_eq!(
+            url,
+            "http://example.test:1442/matches/addr_test1abc?unspent"
+        );
     }
 
     #[test]
@@ -456,8 +462,8 @@ mod tests {
 
     #[test]
     fn find_aggstate_match_returns_malformed_for_bad_json() {
-        let err = find_aggstate_match(b"not json", CHARLI3_ADA_USD_ASSET_KEY)
-            .expect_err("must reject");
+        let err =
+            find_aggstate_match(b"not json", CHARLI3_ADA_USD_ASSET_KEY).expect_err("must reject");
         assert_eq!(err, KupoParseError::MalformedJson);
     }
 

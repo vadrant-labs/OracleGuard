@@ -80,7 +80,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::cardano::{parse_cli_txid_stdout, CardanoTxHashV1, SettlementBackend, SettlementSubmitError};
+use crate::cardano::{
+    parse_cli_txid_stdout, CardanoTxHashV1, SettlementBackend, SettlementSubmitError,
+};
 use crate::settlement::SettlementRequest;
 
 /// Configuration for a [`PyCardanoDisburseBackend`].
@@ -120,8 +122,7 @@ impl PyCardanoDisburseBackend {
         Self {
             python_bin,
             helper_script,
-            ogmios_url: crate::kupo::HACKATHON_PREPROD_BASE_URL
-                .replace(":1442", ":1337"),
+            ogmios_url: crate::kupo::HACKATHON_PREPROD_BASE_URL.replace(":1442", ":1337"),
             pool_address: pool_address.into(),
         }
     }

@@ -254,7 +254,10 @@ mod tests {
     #[test]
     fn build_aggregate_args_emits_config_path_after_flag() {
         let args = build_aggregate_args(&sample_config());
-        assert_eq!(args[2], "/etc/oracleguard/deploy/preprod/ada-usd-preprod.yml");
+        assert_eq!(
+            args[2],
+            "/etc/oracleguard/deploy/preprod/ada-usd-preprod.yml"
+        );
     }
 
     // ---- build_aggregate_args — flag toggling ----
@@ -316,7 +319,10 @@ mod tests {
             if i == 2 {
                 assert_ne!(x, y);
             } else {
-                assert_eq!(x, y, "arg {i} must not change when only config path changes");
+                assert_eq!(
+                    x, y,
+                    "arg {i} must not change when only config path changes"
+                );
             }
         }
     }
