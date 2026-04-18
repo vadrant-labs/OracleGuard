@@ -1,0 +1,33 @@
+[package]
+name = "oracleguard-ziranity-handler"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/vadrant-labs/OracleGuard"
+description = "OracleGuard DomainHandler adapter for the Ziranity substrate-dispatch integration."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+oracleguard-schemas = { path = "../../crates/oracleguard-schemas" }
+oracleguard-policy = { path = "../../crates/oracleguard-policy" }
+
+# Ziranity handler ABI — minimal zero-dependency crate carrying just
+# the DomainHandler trait, CommitContext, and HandlerErrorCode. The
+# path is resolved relative to this manifest and assumes ziranity-v3
+# is checked out as a sibling of OracleGuard. Shipping builds should
+# pin to a git rev or a published crate; the path layout here is for
+# coordinated development against an adjacent tree.
+ion_substrate_abi = { path = "../../../ziranity-v3/crates/ion_substrate_abi" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+panic = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+todo = "deny"
+unimplemented = "deny"

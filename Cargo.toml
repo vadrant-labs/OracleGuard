@@ -6,6 +6,12 @@ members = [
     "crates/oracleguard-adapter",
     "crates/oracleguard-verifier",
 ]
+exclude = [
+    # Integration crate with a heavy path-dep on an external workspace.
+    # Kept out of the main workspace so `cargo build --workspace` stays
+    # fast for contributors who aren't building the Ziranity integration.
+    "integrations/ziranity",
+]
 
 [workspace.package]
 version = "0.0.0"
