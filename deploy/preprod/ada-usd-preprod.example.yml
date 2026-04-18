@@ -1,0 +1,44 @@
+# Charli3 ODV Client — ADA/USD feed, Cardano Preprod
+#
+# Local copy of the hackathon-resources reference config:
+#   https://github.com/Charli3-Official/hackathon-resources/blob/main/configs/ada-usd-preprod.yml
+#
+# Differences from the upstream copy:
+#   - ogmios_url and kupo_url point at the public hackathon synced
+#     instance (35.209.192.203) rather than the private internal
+#     address (10.20.0.4) the upstream config ships with.
+#   - wallet.mnemonic uses shell-style $WALLET_MNEMONIC expansion so
+#     the mnemonic never lands in this file on disk. Operators set
+#     the env var before invoking `charli3 aggregate`.
+#
+# Every other field is taken verbatim from the upstream config.
+
+network:
+  network: "testnet"
+  ogmios_kupo:
+    ogmios_url: "ws://35.209.192.203:1337"
+    kupo_url: "http://35.209.192.203:1442"
+
+wallet:
+  mnemonic: "$WALLET_MNEMONIC"
+
+oracle_address: "addr_test1wq3pacs7jcrlwehpuy3ryj8kwvsqzjp9z6dpmx8txnr0vkq6vqeuu"
+policy_id: "886dcb2363e160c944e63cf544ce6f6265b22ef7c4e2478dd975078e"
+
+tokens:
+  reward_token_policy: ""
+  reward_token_name: ""
+
+odv_validity_length: 300000
+
+reference_script:
+  address: "addr_test1wrtqtdlqc66rzl2hcjhq5p0dfmalw944pwcne6p5kafthhqtzp03x"
+  utxo_reference:
+    transaction_id: "7a69e9d3d90826f861107e4b503c56e08c40d092416a50bad37fc89865a78cd1"
+    output_index: 0
+
+nodes:
+  - root_url: "http://35.208.117.223:8001"
+    pub_key: "582037c6febc9c2f940a38a5c1ea35eb9353ae233497bf9564395c76bf7b0590c4eb"
+  - root_url: "http://35.208.117.223:8002"
+    pub_key: "58205a23e6016659b8c644efcb49301184f6d712037579df6793a50eae332f510248"

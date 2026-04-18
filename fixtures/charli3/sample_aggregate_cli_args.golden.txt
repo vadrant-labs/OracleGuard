@@ -1,0 +1,4 @@
+aggregate
+--config
+/etc/oracleguard/deploy/preprod/ada-usd-preprod.yml
+--auto-submit

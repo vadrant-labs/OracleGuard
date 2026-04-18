@@ -9,6 +9,7 @@
 pub mod artifacts;
 pub mod cardano;
 pub mod charli3;
+pub mod charli3_aggregate;
 pub mod intake;
 pub mod settlement;
 pub mod ziranity_submit;
