@@ -18,9 +18,11 @@ registered_policy_refs = [
 ]
 
 # One allocation for the MVP demo: 1_000 ADA, one authorized subject,
-# ADA-denominated, one approved destination. All ids are test
-# sentinels (0x22/0x33/0x55 repeated) matching the fixtures under
-# `fixtures/evidence/`.
+# ADA-denominated, one approved destination. Subject / allocation
+# ids remain sentinels (0x22 / 0x33) for regression continuity with
+# the byte-pair integration fixtures; the destination is a real
+# Preprod address (wallet_1 — the demo pool; see
+# docs/clusters/preprod_wallets.md for role mapping and balance).
 
 [[registry.allocations]]
 id                  = "2222222222222222222222222222222222222222222222222222222222222222"
@@ -30,5 +32,6 @@ authorized_subjects = [
 ]
 approved_asset      = "ADA"
 approved_destinations = [
-  { bytes_hex = "555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555", length = 57 },
+  # wallet_1 (demo pool) — addr_test1qz4f2vac8nn7tp802mxj3cu40a7xhhzc3agut6spq6rpz5rgtlvyed9yn3ncuv3fgaadfmvn64d7egjn824t7pj99xfs4y58d0
+  { bytes_hex = "00aa9533b83ce7e584ef56cd28e3957f7c6bdc588f51c5ea0106861150685fd84cb4a49c678e3229477ad4ed93d55beca2533aaabf06452993", length = 57 },
 ]
