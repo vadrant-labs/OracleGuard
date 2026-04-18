@@ -21,8 +21,8 @@ registered_policy_refs = [
 # ADA-denominated, one approved destination. Subject / allocation
 # ids remain sentinels (0x22 / 0x33) for regression continuity with
 # the byte-pair integration fixtures; the destination is a real
-# Preprod address (wallet_1 — the demo pool; see
-# docs/clusters/preprod_wallets.md for role mapping and balance).
+# Preprod address (wallet_3 — the demo receiver; see
+# docs/clusters/preprod_wallets.md for the three-wallet role split).
 
 [[registry.allocations]]
 id                  = "2222222222222222222222222222222222222222222222222222222222222222"
@@ -32,6 +32,6 @@ authorized_subjects = [
 ]
 approved_asset      = "ADA"
 approved_destinations = [
-  # wallet_1 (demo pool) — addr_test1qz4f2vac8nn7tp802mxj3cu40a7xhhzc3agut6spq6rpz5rgtlvyed9yn3ncuv3fgaadfmvn64d7egjn824t7pj99xfs4y58d0
-  { bytes_hex = "00aa9533b83ce7e584ef56cd28e3957f7c6bdc588f51c5ea0106861150685fd84cb4a49c678e3229477ad4ed93d55beca2533aaabf06452993", length = 57 },
+  # wallet_3 (demo receiver) — addr_test1qq8wq0j9kpwkyf0tw9pa903r5wux9x6dneskyxanpt7v2w54ga88n5ff3553ugq29jyflcfmjau9e3qj093fmxw0hp7sht3w87
+  { bytes_hex = "000ee03e45b05d6225eb7143d2be23a3b8629b4d9e61621bb30afcc53a95474e79d1298d291e200a2c889fe13b97785cc41279629d99cfb87d", length = 57 },
 ]
