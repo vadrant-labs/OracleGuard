@@ -41,6 +41,13 @@ CLAUDE.md
 # Cluster planning docs (internal planning, not public)
 docs/clusters/
 
+# Python venv + bytecode (operator-machine artifacts for gap #1/#3 helpers)
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
 # OS and editor
 .DS_Store
 *.swp
