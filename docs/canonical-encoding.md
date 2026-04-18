@@ -9,11 +9,19 @@ replay, verifier re-encoding) depends on it.
 
 - **Format:** `postcard` — a compact, deterministic binary encoder
   for `serde`-enabled types.
-- **Pinned major version:** `postcard = "=1.0.10"` (exact) in
+- **Pinned major version:** `postcard = "=1.1.1"` (exact) in
   `crates/oracleguard-schemas/Cargo.toml`. The pinned major version is
   part of the encoding contract. A postcard major version bump would
   change the canonical bytes and therefore must be treated as a
   schema-version boundary change.
+
+  The `=1.0.10` → `=1.1.1` bump (2026-04-18) aligns with the Ziranity
+  workspace pin so any cross-crate linkage in a shared binary sees a
+  single postcard implementation. The 1.1.x wire format is empirically
+  byte-compatible with 1.0.10 for every canonical surface in this
+  repo: all golden fixtures (intent, policy_ref, evaluator results,
+  four evidence bundles, CLI args) round-trip byte-identically under
+  either version. No fixture regeneration was required.
 
 ## What is encoded
 

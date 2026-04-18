@@ -13,7 +13,7 @@ oracleguard-policy = { path = "../oracleguard-policy" }
 minicbor = { version = "0.25", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-postcard = { version = "=1.0.10", default-features = false, features = ["alloc"] }
+postcard = { version = "=1.1.1", default-features = false, features = ["alloc"] }
 
 [lints]
 workspace = true

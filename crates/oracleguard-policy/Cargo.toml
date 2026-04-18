@@ -9,7 +9,7 @@ description = "Pure deterministic release-cap evaluation for OracleGuard."
 
 [dependencies]
 oracleguard-schemas = { path = "../oracleguard-schemas" }
-postcard = { version = "=1.0.10", default-features = false, features = ["alloc"] }
+postcard = { version = "=1.1.1", default-features = false, features = ["alloc"] }
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
 
 [lints]
