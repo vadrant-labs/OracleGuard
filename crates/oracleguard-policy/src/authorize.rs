@@ -91,6 +91,22 @@ pub enum AuthorizationResult {
 ///
 /// Cluster 5 Slice 03 wires the anchor-gate function against this
 /// trait; tests in that slice supply an in-memory fixture.
+///
+/// ## v1 stability
+///
+/// The shape of this trait — one method, `is_policy_registered(&self,
+/// &[u8; 32]) -> bool` — is load-bearing for external integrations
+/// that wire OracleGuard's three-gate closure into their own runtime
+/// (the primary current consumer is the KZS substrate-dispatch
+/// integration, which imports this trait directly from
+/// `oracleguard-policy`). The trait signature is therefore frozen for
+/// v1.
+///
+/// Additive changes (new methods, new associated types) land as a
+/// distinct `PolicyAnchorViewV2` trait alongside this one, not as
+/// in-place edits. Consumers choose when to adopt the new trait; the
+/// v1 trait stays unchanged. This mirrors the canonical-byte version
+/// boundary rules for wire types elsewhere in `oracleguard-schemas`.
 pub trait PolicyAnchorView {
     /// Return `true` when the given `policy_ref` is a registered policy
     /// identity. Any non-recognized bytes must return `false`.
@@ -130,6 +146,17 @@ pub struct AllocationFacts<'a> {
 ///
 /// Cluster 5 Slice 04 wires the registry-gate function against this
 /// trait; tests in that slice supply an in-memory fixture.
+///
+/// ## v1 stability
+///
+/// Same stability contract as [`PolicyAnchorView`]: the trait shape
+/// is frozen for v1, and additive changes land as
+/// `AllocationRegistryViewV2` alongside this one rather than as
+/// in-place edits. The [`AllocationFacts`] struct it returns carries
+/// the same stability commitment — field additions are a v2 event.
+/// External integrations that import this trait directly (notably the
+/// KZS substrate-dispatch handler) can rely on its shape across
+/// non-major-version OracleGuard releases.
 pub trait AllocationRegistryView {
     /// Return the facts for `allocation_id`, or `None` if the
     /// allocation is not recognized or not approved. Non-existent
