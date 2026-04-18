@@ -513,4 +513,161 @@ mod tests {
         );
         std::fs::write(path, bytes).expect("write golden fixture");
     }
+
+    // ---- Golden deny-path fixture ----
+    //
+    // The 900 ADA deny path is the reference MVP refusal scenario:
+    // request exceeds the 75% release cap (1000 ADA allocation at
+    // 7500 bps = 750 ADA cap), so the grant gate emits
+    // ReleaseCapExceeded and fulfillment produces no Cardano
+    // transaction. Evidence still records the full governed-action
+    // chain so refusal is verifiable, not silent.
+
+    const DEMO_REQUEST_LOVELACE_DENY: u64 = 900_000_000;
+    const DEMO_COMMITTED_HEIGHT_DENY: u64 = 10_099;
+
+    const DENY_900_ADA_GOLDEN: &[u8] =
+        include_bytes!("../../../fixtures/evidence/deny_900_ada_bundle.postcard");
+
+    fn demo_denied_receipt(intent: &DisbursementIntentV1) -> IntentReceiptV1 {
+        IntentReceiptV1 {
+            intent_id: intent_id(intent).expect("intent id"),
+            status: IntentStatus::Committed,
+            committed_height: DEMO_COMMITTED_HEIGHT_DENY,
+            output: AuthorizationResult::Denied {
+                reason: DisbursementReasonCode::ReleaseCapExceeded,
+                gate: AuthorizationGate::Grant,
+            },
+        }
+    }
+
+    fn golden_deny_evidence() -> DisbursementEvidenceV1 {
+        let intent = demo_intent(DEMO_REQUEST_LOVELACE_DENY);
+        let receipt = demo_denied_receipt(&intent);
+        assemble_disbursement_evidence(
+            &intent,
+            &receipt,
+            FulfillmentOutcome::DeniedUpstream {
+                reason: DisbursementReasonCode::ReleaseCapExceeded,
+                gate: AuthorizationGate::Grant,
+            },
+            DEMO_BASIS_LOVELACE,
+            DEMO_NOW_MS,
+        )
+        .expect("assemble deny")
+    }
+
+    #[test]
+    fn deny_900_ada_golden_decodes_to_expected_evidence() {
+        let expected = golden_deny_evidence();
+        let decoded = decode_evidence(DENY_900_ADA_GOLDEN).expect("decode golden");
+        assert_eq!(decoded, expected);
+    }
+
+    #[test]
+    fn deny_900_ada_golden_encode_round_trips() {
+        let expected = golden_deny_evidence();
+        let bytes = encode_evidence(&expected).expect("encode");
+        assert_eq!(bytes.as_slice(), DENY_900_ADA_GOLDEN);
+    }
+
+    #[test]
+    fn deny_900_ada_golden_records_release_cap_exceeded_and_no_tx() {
+        let decoded = decode_evidence(DENY_900_ADA_GOLDEN).expect("decode golden");
+
+        // Intent references the same policy and destination as the
+        // allow path — only the requested amount differs.
+        assert_eq!(decoded.intent.policy_ref, DEMO_POLICY_REF);
+        assert_eq!(decoded.intent.allocation_id, DEMO_ALLOCATION_ID);
+        assert_eq!(decoded.intent.requester_id, DEMO_REQUESTER_ID);
+        assert_eq!(
+            decoded.intent.requested_amount_lovelace,
+            DEMO_REQUEST_LOVELACE_DENY
+        );
+
+        // Intent-id recomputation matches the recorded id.
+        let recomputed = intent_id(&decoded.intent).expect("intent id from decoded fixture");
+        assert_eq!(decoded.intent_id, recomputed);
+
+        // Authorization: Denied(ReleaseCapExceeded, Grant).
+        assert_eq!(
+            decoded.authorization,
+            AuthorizationSnapshotV1::Denied {
+                reason: DisbursementReasonCode::ReleaseCapExceeded,
+                gate: AuthorizationGate::Grant,
+            }
+        );
+
+        // Execution: DeniedUpstream with the same reason/gate pair and
+        // no Settled variant (no tx_hash anywhere in the record).
+        assert_eq!(
+            decoded.execution,
+            ExecutionOutcomeV1::DeniedUpstream {
+                reason: DisbursementReasonCode::ReleaseCapExceeded,
+                gate: AuthorizationGate::Grant,
+            }
+        );
+        match decoded.execution {
+            ExecutionOutcomeV1::Settled { .. } => {
+                panic!("deny bundle must not contain a Settled execution outcome")
+            }
+            ExecutionOutcomeV1::DeniedUpstream { .. }
+            | ExecutionOutcomeV1::RejectedAtFulfillment { .. } => {}
+        }
+    }
+
+    #[test]
+    fn deny_900_ada_golden_gate_matches_reason_gate_partition() {
+        let decoded = decode_evidence(DENY_900_ADA_GOLDEN).expect("decode golden");
+        match decoded.authorization {
+            AuthorizationSnapshotV1::Denied { reason, gate } => {
+                // Evidence must preserve the reason.gate() partition
+                // from oracleguard_schemas::reason.
+                assert_eq!(gate, reason.gate());
+            }
+            other => panic!("expected Denied, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deny_900_ada_golden_and_allow_700_ada_golden_share_policy_and_allocation() {
+        // Evidence for both MVP scenarios must reference the same
+        // Katiba-anchored policy and the same managed-pool allocation;
+        // only the requested amount and decision differ between them.
+        let allow = decode_evidence(ALLOW_700_ADA_GOLDEN).expect("allow");
+        let deny = decode_evidence(DENY_900_ADA_GOLDEN).expect("deny");
+        assert_eq!(allow.intent.policy_ref, deny.intent.policy_ref);
+        assert_eq!(allow.intent.allocation_id, deny.intent.allocation_id);
+        assert_eq!(allow.intent.requester_id, deny.intent.requester_id);
+        assert_eq!(
+            allow.intent.oracle_fact.price_microusd,
+            deny.intent.oracle_fact.price_microusd
+        );
+        assert_eq!(allow.intent.destination, deny.intent.destination);
+        assert_eq!(allow.intent.asset, deny.intent.asset);
+        assert_ne!(
+            allow.intent.requested_amount_lovelace,
+            deny.intent.requested_amount_lovelace
+        );
+    }
+
+    /// Regenerate `fixtures/evidence/deny_900_ada_bundle.postcard`
+    /// when the fixture shape itself changes deliberately. Not run in
+    /// CI:
+    ///
+    /// ```text
+    /// cargo test -p oracleguard-adapter --lib \
+    ///   -- --ignored regenerate_deny_900_ada_golden_fixture
+    /// ```
+    #[test]
+    #[ignore = "regenerates golden fixture; run manually only"]
+    fn regenerate_deny_900_ada_golden_fixture() {
+        let evidence = golden_deny_evidence();
+        let bytes = encode_evidence(&evidence).expect("encode");
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/evidence/deny_900_ada_bundle.postcard"
+        );
+        std::fs::write(path, bytes).expect("write golden fixture");
+    }
 }
