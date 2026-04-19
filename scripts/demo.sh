@@ -126,7 +126,7 @@ skipped() {
 # ==============================================================
 
 step "Session setup (done off-screen before the demo)" \
-     "Pool signing key was loaded into this shell's environment from Eternl via \`read -s -p POOL_MNEMONIC:\` — the mnemonic never touches disk, never appears in history, and is not visible to the audience." \
+     "Pool signing key was loaded into this shell's environment from Eternl via \`read -s -p POOL_MNEMONIC:\` — the mnemonic never touches disk and never appears in history." \
      '[ -n "${POOL_MNEMONIC:-}" ] && echo "POOL_MNEMONIC: loaded ($(echo "$POOL_MNEMONIC" | wc -w) words)" || echo "POOL_MNEMONIC: not set (dry-run ok, settlement will skip)"'
 
 # ==============================================================
@@ -267,7 +267,7 @@ step "Replay all recorded evidence bundles through the offline verifier" \
 
 if [ "$ROTATE" = 1 ]; then
   step "Policy rotation: original vs rotated policy_ref" \
-       "Raise release_cap_basis_points from 7500 to 10000 and re-canonicalize. A rule change is observable as a new 32-byte policy_ref — the original remains for comparison so the audience can eyeball both values." \
+       "Raise release_cap_basis_points from 7500 to 10000 and re-canonicalize. A rule change is observable as a new 32-byte policy_ref." \
        "python3 scripts/rotated_policy_ref.py --cap-bps 10000"
 fi
 
