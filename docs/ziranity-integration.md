@@ -47,7 +47,14 @@ Ziranity private runtime
 - Providing an offline verifier that can be pointed at an evidence
   bundle and reach a verdict without any private code.
 
-## Interfaces (conceptual, not yet implemented)
+## Interfaces
+
+These interfaces are implemented across the boundary: the public crates
+in this repo (schemas / policy / adapter / verifier) define the canonical
+byte layouts and pure evaluator; the private Ziranity v1.1.0 handover
+bundle wires the three-gate closure into consensus hooks. Both sides
+have been smoke-tested end-to-end against a 4-node Ziranity BFT devnet
+producing byte-identical `AuthorizationResult` output.
 
 - Ziranity calls `oracleguard-adapter` to submit an authorized
   `DisbursementIntentV1` after its own authorization gate.
