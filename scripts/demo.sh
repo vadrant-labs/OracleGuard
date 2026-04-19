@@ -36,9 +36,32 @@ SMOKE="$HOME/.local/opt/ziranity-v1.1.0-oracleguard-linux-x86_64/config/smoke.sh
 VENV_PY="$REPO_ROOT/.venv/bin/python"
 
 POOL_ADDR="addr_test1qz4f2vac8nn7tp802mxj3cu40a7xhhzc3agut6spq6rpz5rgtlvyed9yn3ncuv3fgaadfmvn64d7egjn824t7pj99xfs4y58d0"
+RECEIVER_ADDR="addr_test1qq8wq0j9kpwkyf0tw9pa903r5wux9x6dneskyxanpt7v2w54ga88n5ff3553ugq29jyflcfmjau9e3qj093fmxw0hp7sht3w87"
 RECEIVER_HEX="000ee03e45b05d6225eb7143d2be23a3b8629b4d9e61621bb30afcc53a95474e79d1298d291e200a2c889fe13b97785cc41279629d99cfb87d"
 OGMIOS_URL="http://35.209.192.203:1337"
 KUPO_URL="http://35.209.192.203:1442"
+
+# Sum lovelace across every unspent UTxO at `$1` using the public
+# hackathon Kupo instance. Prints the total in ADA with 6-decimal
+# precision; prints "unreachable" if Kupo does not respond.
+balance_ada() {
+  local addr="$1"
+  local body
+  body=$(curl -sS --max-time 10 "$KUPO_URL/matches/$addr?unspent" 2>/dev/null) || {
+    echo "unreachable"; return
+  }
+  python3 - "$body" <<'EOF'
+import json, sys
+try:
+    rs = json.loads(sys.argv[1])
+except Exception:
+    print("parse-error"); sys.exit(0)
+lovelace = sum(r['value']['coins'] for r in rs)
+whole = lovelace // 1_000_000
+frac  = lovelace %  1_000_000
+print(f"{whole}.{frac:06d} tADA  ({lovelace} lovelace, {len(rs)} UTxOs)")
+EOF
+}
 
 DRY=0
 ROTATE=0
@@ -63,10 +86,23 @@ echo "  canonical bytes : $(wc -c < fixtures/policy_v1.canonical.bytes) bytes"
 echo "  policy_ref      : $POLICY_REF"
 
 # ---- 2. ALLOCATION ----
-phase "2. ALLOCATION"
-echo "  pool            : test_wallet_1 (Preprod)"
-echo "  approved        : 1000 ADA"
-echo "  receiver        : test_wallet_3 (Preprod)"
+phase "2. ALLOCATION + WALLET BALANCES (live Kupo)"
+echo "  pool      (test_wallet_1)"
+echo "    address : $POOL_ADDR"
+echo "    balance : $(balance_ada "$POOL_ADDR")"
+echo
+echo "  receiver  (test_wallet_3)"
+echo "    address : $RECEIVER_ADDR"
+echo "    balance : $(balance_ada "$RECEIVER_ADDR")"
+echo
+echo "  approved  : 1000 ADA (pool → receiver)"
+echo
+echo "  balance query (copy-paste to verify):"
+echo "    curl -sS \"$KUPO_URL/matches/\$ADDR?unspent\" \\"
+echo "      | python3 -c \"import json,sys;print(sum(r['value']['coins'] for r in json.load(sys.stdin)))\""
+# Snapshot balances for the post-settlement delta.
+RECEIVER_BEFORE=$(curl -sS --max-time 10 "$KUPO_URL/matches/$RECEIVER_ADDR?unspent" 2>/dev/null \
+  | python3 -c "import json,sys;print(sum(r['value']['coins'] for r in json.load(sys.stdin)))" 2>/dev/null || echo "")
 
 # ---- 3. ORACLE (reachability probe) ----
 phase "3. ORACLE (Charli3 ADA/USD, live Preprod)"
@@ -125,6 +161,24 @@ if [ "$DRY" = 0 ] && [ "$ALLOW_OK" = 1 ]; then
     else
       echo "  tx_id           : $TX_ID"
       echo "  cexplorer       : https://preprod.cexplorer.io/tx/$TX_ID"
+      echo
+      echo "  Waiting ~20 s for Preprod confirmation..."
+      sleep 20
+      echo "  curl query:"
+      echo "    curl -sS \"$KUPO_URL/matches/$RECEIVER_ADDR?unspent\""
+      echo
+      echo "  receiver balance now : $(balance_ada "$RECEIVER_ADDR")"
+      if [ -n "$RECEIVER_BEFORE" ]; then
+        RECEIVER_AFTER=$(curl -sS --max-time 10 "$KUPO_URL/matches/$RECEIVER_ADDR?unspent" 2>/dev/null \
+          | python3 -c "import json,sys;print(sum(r['value']['coins'] for r in json.load(sys.stdin)))" 2>/dev/null || echo "")
+        if [ -n "$RECEIVER_AFTER" ]; then
+          DELTA=$(( RECEIVER_AFTER - RECEIVER_BEFORE ))
+          DELTA_WHOLE=$(( DELTA / 1000000 ))
+          DELTA_FRAC=$(( DELTA % 1000000 ))
+          echo "  delta vs before      : +${DELTA_WHOLE}.$(printf '%06d' $DELTA_FRAC) tADA"
+        fi
+      fi
+      echo "  pool balance now     : $(balance_ada "$POOL_ADDR")"
     fi
   fi
 fi
