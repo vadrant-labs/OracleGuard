@@ -378,9 +378,9 @@ if [ "$PULL_MODE" = "live" ]; then
   rm -f /tmp/og-charli3-txn.cbor /tmp/og-charli3-aggregate.out
   rm -f "$REPO_ROOT"/odv_transaction_*.cbor 2>/dev/null || true
   step "Charli3 pull: submit aggregation tx (live)" \
-       "On-demand pull: the consumer (us) triggers a fresh aggregation. Oracle nodes sign the price, the aggregator collects + submits the tx. Output streams as it happens." \
-       "timeout 120 $REPO_ROOT/.venv/bin/charli3 aggregate --config deploy/preprod/ada-usd-preprod.example.yml --auto-submit --output /tmp/og-charli3-txn.cbor 2>&1 | tee /tmp/og-charli3-aggregate.out" || \
-       echo "    (aggregation step did not succeed — continuing; subsequent steps will use whatever AggState is already on chain)"
+       "On-demand pull: the consumer (us) triggers a fresh aggregation. Oracle nodes sign the price, the aggregator collects + submits the tx. If this submission fails (Charli3 validator can reject for upstream reasons like oracle-node disagreement or stale reward state), later steps consume the most recent on-chain AggState that is still within its freshness window — the pull attempt is real, its success is best-effort." \
+       "timeout 120 $VENV_PY $REPO_ROOT/scripts/charli3_quiet.py aggregate --config deploy/preprod/ada-usd-preprod.example.yml --auto-submit --output /tmp/og-charli3-txn.cbor 2>&1 | tee /tmp/og-charli3-aggregate.out" || \
+       echo "    → aggregation did not land; subsequent steps use the AggState already on chain"
 
   CHARLI3_TX_ID=$(grep -oE 'tx[_ ]?id[: ]+[0-9a-f]{64}' /tmp/og-charli3-aggregate.out 2>/dev/null \
                   | head -1 | grep -oE '[0-9a-f]{64}' || true)
