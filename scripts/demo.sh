@@ -82,10 +82,36 @@ setup_smoke_workdir() {
   ln -sf "$ZIRANITY_BUNDLE/config/devnet.toml"        "$sd/devnet.toml"
   ln -sf "$ZIRANITY_BUNDLE/config/oracleguard-node.toml" "$sd/oracleguard-node.toml"
   ln -sf "$ZIRANITY_BUNDLE/config/smoke.sh"           "$sd/smoke.sh"
-  ln -sf "$REPO_ROOT"                                  "$SMOKE_WORKDIR/OracleGuard"
-  # The symlinked smoke.sh path is what we invoke; from there it
-  # resolves ZIRANITY_ROOT = $zr and ORACLEGUARD_ROOT = the symlink
-  # to our real checkout.
+
+  # Build a minimal OracleGuard tree containing only what smoke.sh
+  # reads: the integration fixtures and the routing OCU id hex. We
+  # COPY (not symlink) the intent fixtures so we can refresh their
+  # oracle_provenance timestamps in-place without touching the repo.
+  local og="$SMOKE_WORKDIR/OracleGuard"
+  mkdir -p "$og/integrations/ziranity/fixtures/integration"
+  mkdir -p "$og/fixtures/routing"
+  cp "$REPO_ROOT"/integrations/ziranity/fixtures/integration/*.postcard \
+     "$og/integrations/ziranity/fixtures/integration/"
+  cp "$REPO_ROOT"/fixtures/routing/disbursement_ocu_id.hex \
+     "$og/fixtures/routing/disbursement_ocu_id.hex"
+
+  # Refresh oracle_provenance timestamps on the time-sensitive fixtures
+  # (allow + deny). The stale fixture stays stale — that's its purpose.
+  # intent_id is invariant under provenance change (encoding.rs excludes
+  # provenance from the identity projection) and AuthorizedEffectV1
+  # doesn't carry provenance, so the expected result fixtures remain
+  # valid.
+  local refresh_bin="$REPO_ROOT/target/release/examples/refresh_fixture_timestamps"
+  if [ ! -x "$refresh_bin" ]; then
+    (cd "$REPO_ROOT" && cargo build -p oracleguard-adapter \
+        --example refresh_fixture_timestamps --release --quiet)
+  fi
+  for scenario in allow_700_ada deny_900_ada; do
+    "$refresh_bin" \
+      "$og/integrations/ziranity/fixtures/integration/${scenario}_intent.postcard" \
+      >/dev/null || true
+  done
+
   SMOKE_RUNNER="$sd/smoke.sh"
 }
 
