@@ -63,7 +63,7 @@ for a in "$@"; do
   esac
 done
 
-STEP_NUM=0
+STEP_NUM=-1  # so Step 0 prints as "0", not "1"
 
 # step <title> <description> <command>
 # Displays the title, description, and verbatim command. In
@@ -101,11 +101,19 @@ skipped() {
 }
 
 # ==============================================================
+# 0. SESSION SETUP (mnemonic status)
+# ==============================================================
+
+step "Session setup (done off-screen before the demo)" \
+     "Pool signing key was loaded into this shell's environment from Eternl via \`read -s -p POOL_MNEMONIC:\` — the mnemonic never touches disk, never appears in history, and is not visible to the audience." \
+     '[ -n "${POOL_MNEMONIC:-}" ] && echo "POOL_MNEMONIC: loaded ($(echo "$POOL_MNEMONIC" | wc -w) words)" || echo "POOL_MNEMONIC: not set (dry-run ok, settlement will skip)"'
+
+# ==============================================================
 # 1. POLICY
 # ==============================================================
 
 step "Show the policy document" \
-     "The governance rules this disbursement is bound to." \
+     "Human-readable policy. The next step canonicalizes it (deterministic sort + compact) and hashes to get policy_ref — the 32-byte identity every intent references." \
      "cat fixtures/policy_v1.json"
 
 step "Derive policy_ref (sha256 over canonical bytes)" \
@@ -157,15 +165,15 @@ DENY_OK=0
 if [ "$DRY" = 1 ] || [ ! -x "$SMOKE" ]; then
   reason="--dry flag"
   [ ! -x "$SMOKE" ] && reason="smoke.sh not found at $SMOKE"
-  skipped "smoke.sh allow" "Ziranity devnet submit + byte-identity diff ($reason)"
-  skipped "smoke.sh deny"  "Ziranity devnet submit + byte-identity diff ($reason)"
+  skipped "Consensus run: allow scenario (4-node Ziranity BFT devnet)" "Devnet submit + byte-identity diff ($reason)"
+  skipped "Consensus run: deny scenario (4-node Ziranity BFT devnet)"  "Devnet submit + byte-identity diff ($reason)"
 else
-  if step "Scenario: allow (within cap)" \
-          "Submit allow_700_ada fixture to a 4-node Ziranity devnet; expect PASS (committed output bytes match the recorded fixture)." \
+  if step "Consensus run: allow scenario (4-node Ziranity BFT devnet)" \
+          "Submit allow_700_ada fixture to a 4-node Ziranity BFT devnet; expect PASS (committed output bytes match the recorded fixture)." \
           "'$SMOKE' allow"; then
     ALLOW_OK=1
   fi
-  if step "Scenario: deny (over cap)" \
+  if step "Consensus run: deny scenario (4-node Ziranity BFT devnet)" \
           "Submit deny_900_ada fixture; expect PASS with the 3-byte Denied(ReleaseCapExceeded) envelope." \
           "'$SMOKE' deny"; then
     DENY_OK=1
@@ -228,31 +236,18 @@ fi
 # 6. OFFLINE VERIFIER
 # ==============================================================
 
-step "Replay all recorded evidence bundles through the verifier" \
-     "CLEAN means every recorded decision reproduces byte-for-byte." \
-     "cargo test -p oracleguard-verifier verify_bundle_reports_clean --quiet 2>&1 | tail -10"
+step "Replay all recorded evidence bundles through the offline verifier" \
+     "Independent verification: load every recorded evidence bundle (allow, deny, reject-non-ada, reject-pending), replay the evaluator, and assert byte-for-byte reproduction. The '1 passed' below covers all four bundles — a single test iterates them internally." \
+     "cargo test -p oracleguard-verifier --lib verify_bundle_reports_clean --quiet 2>&1 | tail -5"
 
 # ==============================================================
 # 7. POLICY ROTATION (optional)
 # ==============================================================
 
 if [ "$ROTATE" = 1 ]; then
-  step "Rotated policy_ref (cap 7500 → 10000)" \
-       "Re-canonicalize the policy with a raised cap; a policy change is observable via a new 32-byte policy_ref." \
-       "python3 -c '
-import json, hashlib
-rotated = {
-    \"schema\": \"oracleguard.policy.v1\",
-    \"policy_version\": 1,
-    \"anchored_commitment\": \"katiba://policy/constitutional-release/v1\",
-    \"release_cap_basis_points\": 10000,
-    \"allowed_assets\": [\"ADA\"],
-}
-canon = json.dumps(rotated, sort_keys=True, separators=(\",\", \":\")).encode()
-print(\"rotated canonical bytes:\", len(canon))
-print(\"rotated policy_ref     :\", hashlib.sha256(canon).hexdigest())
-print(\"original policy_ref    :\", open(\"fixtures/policy_v1.canonical.bytes\",\"rb\").read() and hashlib.sha256(open(\"fixtures/policy_v1.canonical.bytes\",\"rb\").read()).hexdigest())
-'"
+  step "Policy rotation: original vs rotated policy_ref" \
+       "Raise release_cap_basis_points from 7500 to 10000 and re-canonicalize. A rule change is observable as a new 32-byte policy_ref — the original remains for comparison so the audience can eyeball both values." \
+       "python3 scripts/rotated_policy_ref.py --cap-bps 10000"
 fi
 
 # ==============================================================
