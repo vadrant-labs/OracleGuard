@@ -75,6 +75,13 @@ Forbidden at all times:
 - Any out-of-tree `path = "..."` dependency. Private Ziranity code is not
   a path dependency of any public crate.
 
+Applies to regular and build dependencies only. `[dev-dependencies]` are
+exempt because they do not ship with the crate — an external consumer
+building against a published `oracleguard-adapter` does not pull in any
+dev-dep. Examples and tests may therefore import peer workspace crates
+when they need to demonstrate end-to-end flows (e.g. an adapter example
+that asserts its assembled evidence replays CLEAN through the verifier).
+
 If `scripts/check_deps.sh` and this table ever disagree, the script is the
 source of truth; update the table to match, not the other way around.
 

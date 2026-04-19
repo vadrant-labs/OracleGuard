@@ -22,12 +22,22 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 # Extract: <crate_name>\t<dep_name>\t<dep_path_or_empty>
+#
+# Only regular + build dependencies are inspected. `[dev-dependencies]`
+# are skipped: they don't ship with the crate and therefore can't pull
+# in a forbidden edge at runtime for any external consumer. This lets
+# crate-level examples and tests import peer workspace crates when they
+# need to demonstrate end-to-end flows (e.g. an adapter example that
+# asserts its output replays CLEAN through the verifier) without
+# violating the architectural rule the check exists to protect.
 edges=$(cargo metadata --format-version=1 --no-deps | python3 -c '
 import json, sys
 meta = json.load(sys.stdin)
 for pkg in meta.get("packages", []):
     name = pkg.get("name", "")
     for dep in pkg.get("dependencies", []):
+        if dep.get("kind") == "dev":
+            continue
         dep_name = dep.get("name", "")
         dep_path = dep.get("path") or ""
         print(f"{name}\t{dep_name}\t{dep_path}")
