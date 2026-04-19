@@ -1,31 +1,36 @@
 #!/usr/bin/env bash
 # OracleGuard demo orchestrator.
 #
-# Drives the real end-to-end path, in order:
+# Drives the real end-to-end path, step by step. Every step shows the
+# actual command that produces its result; default mode runs through
+# automatically, -i/--interactive waits for the presenter to hit
+# ENTER before running each command.
 #
-#   1. policy      — canonicalize the policy JSON, show policy_ref
-#   2. allocation  — show the approved pool → receiver allocation
-#   3. oracle      — probe hackathon Kupo for reachability
+# Phases (each may be several steps):
+#
+#   1. policy      — show the policy JSON; derive policy_ref
+#   2. balances    — query live Kupo for pool + receiver balances
+#   3. oracle      — fetch the Charli3 AggState UTxO via Kupo
 #   4. scenarios   — run smoke.sh allow + smoke.sh deny against a
-#                    4-node Ziranity devnet; PASS means the committed
-#                    output bytes match the recorded fixture
+#                    4-node Ziranity devnet
 #   5. settle      — if allow passed, submit a real Cardano Preprod
-#                    disbursement tx via scripts/cardano_disburse.py
-#   6. verify      — replay all recorded evidence bundles through the
-#                    offline verifier (cargo test)
+#                    disbursement tx via scripts/cardano_disburse.py,
+#                    then re-query the receiver's balance
+#   6. verify      — replay recorded evidence bundles through the
+#                    offline verifier
 #   7. rotate      — (optional) show that raising the cap produces a
 #                    new policy_ref
 #
 # USAGE
-#   scripts/demo.sh                  # full live demo
-#   scripts/demo.sh --dry            # no devnet, no settlement
-#   scripts/demo.sh --rotate         # include the policy-rotation phase
-#   scripts/demo.sh --dry --rotate   # narrative + offline verify + rotate
+#   scripts/demo.sh                        # full live demo, auto-paced
+#   scripts/demo.sh -i                     # interactive (wait on ENTER)
+#   scripts/demo.sh --dry                  # no devnet, no settlement
+#   scripts/demo.sh -i --dry --rotate      # rehearsal narration
 #
 # PREREQ (for live mode)
 #   - ~/.local/opt/ziranity-v1.1.0-oracleguard-linux-x86_64/config/smoke.sh
-#   - .venv/bin/python with pycardano  (see scripts/preflight.sh)
-#   - POOL_MNEMONIC exported (only needed for §5 settlement)
+#   - .venv/bin/python with pycardano   (see scripts/preflight.sh)
+#   - POOL_MNEMONIC exported            (needed only for §5 settlement)
 
 set -euo pipefail
 
@@ -38,196 +43,231 @@ VENV_PY="$REPO_ROOT/.venv/bin/python"
 POOL_ADDR="addr_test1qz4f2vac8nn7tp802mxj3cu40a7xhhzc3agut6spq6rpz5rgtlvyed9yn3ncuv3fgaadfmvn64d7egjn824t7pj99xfs4y58d0"
 RECEIVER_ADDR="addr_test1qq8wq0j9kpwkyf0tw9pa903r5wux9x6dneskyxanpt7v2w54ga88n5ff3553ugq29jyflcfmjau9e3qj093fmxw0hp7sht3w87"
 RECEIVER_HEX="000ee03e45b05d6225eb7143d2be23a3b8629b4d9e61621bb30afcc53a95474e79d1298d291e200a2c889fe13b97785cc41279629d99cfb87d"
+ORACLE_ADDR="addr_test1wq3pacs7jcrlwehpuy3ryj8kwvsqzjp9z6dpmx8txnr0vkq6vqeuu"
+C3AS_SUFFIX="43334153"
 OGMIOS_URL="http://35.209.192.203:1337"
 KUPO_URL="http://35.209.192.203:1442"
 
-# Sum lovelace across every unspent UTxO at `$1` using the public
-# hackathon Kupo instance. Prints the total in ADA with 6-decimal
-# precision; prints "unreachable" if Kupo does not respond.
-balance_ada() {
-  local addr="$1"
-  local body
-  body=$(curl -sS --max-time 10 "$KUPO_URL/matches/$addr?unspent" 2>/dev/null) || {
-    echo "unreachable"; return
-  }
-  python3 - "$body" <<'EOF'
-import json, sys
-try:
-    rs = json.loads(sys.argv[1])
-except Exception:
-    print("parse-error"); sys.exit(0)
-lovelace = sum(r['value']['coins'] for r in rs)
-whole = lovelace // 1_000_000
-frac  = lovelace %  1_000_000
-print(f"{whole}.{frac:06d} tADA  ({lovelace} lovelace, {len(rs)} UTxOs)")
-EOF
-}
-
+INTERACTIVE=0
 DRY=0
 ROTATE=0
 for a in "$@"; do
   case "$a" in
-    --dry)    DRY=1 ;;
-    --rotate) ROTATE=1 ;;
+    -i|--interactive) INTERACTIVE=1 ;;
+    --dry)            DRY=1 ;;
+    --rotate)         ROTATE=1 ;;
     --help|-h)
-      sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *) echo "unknown flag: $a" >&2; exit 2 ;;
   esac
 done
 
-phase() { printf '\n─── %s ───────────────────────────────────────────\n' "$1"; }
+STEP_NUM=0
 
-# ---- 1. POLICY ----
-phase "1. POLICY"
-sed 's/^/  /' fixtures/policy_v1.json
-POLICY_REF=$(sha256sum fixtures/policy_v1.canonical.bytes | awk '{print $1}')
-echo "  canonical bytes : $(wc -c < fixtures/policy_v1.canonical.bytes) bytes"
-echo "  policy_ref      : $POLICY_REF"
+# step <title> <description> <command>
+# Displays the title, description, and verbatim command. In
+# interactive mode, waits for ENTER before running and again after
+# the output so the presenter can narrate. In auto mode, runs through.
+step() {
+  local title="$1"
+  local desc="$2"
+  local cmd="$3"
+  STEP_NUM=$((STEP_NUM + 1))
+  echo
+  printf '═══ STEP %d — %s\n' "$STEP_NUM" "$title"
+  printf '    %s\n' "$desc"
+  # Print the command verbatim, indented. First line gets '$ ' prefix.
+  printf '    $ %s\n' "$cmd" | awk 'NR==1{print; next} {print "        " $0}'
+  if [ "$INTERACTIVE" = 1 ]; then
+    read -r -p '    [ENTER to run] ' _ < /dev/tty
+  fi
+  echo   '    ─ output ─'
+  set +e
+  eval "$cmd" 2>&1 | sed 's/^/    /'
+  local rc=${PIPESTATUS[0]}
+  set -e
+  if [ "$INTERACTIVE" = 1 ]; then
+    read -r -p '    [ENTER for next step] ' _ < /dev/tty
+  fi
+  return $rc
+}
 
-# ---- 2. ALLOCATION ----
-phase "2. ALLOCATION + WALLET BALANCES (live Kupo)"
-echo "  pool      (test_wallet_1)"
-echo "    address : $POOL_ADDR"
-echo "    balance : $(balance_ada "$POOL_ADDR")"
-echo
-echo "  receiver  (test_wallet_3)"
-echo "    address : $RECEIVER_ADDR"
-echo "    balance : $(balance_ada "$RECEIVER_ADDR")"
-echo
-echo "  approved  : 1000 ADA (pool → receiver)"
-echo
-echo "  balance query (copy-paste to verify):"
-echo "    curl -sS \"$KUPO_URL/matches/\$ADDR?unspent\" \\"
-echo "      | python3 -c \"import json,sys;print(sum(r['value']['coins'] for r in json.load(sys.stdin)))\""
-# Snapshot balances for the post-settlement delta.
+skipped() {
+  STEP_NUM=$((STEP_NUM + 1))
+  echo
+  printf '═══ STEP %d — %s  [SKIPPED]\n' "$STEP_NUM" "$1"
+  printf '    %s\n' "$2"
+}
+
+# ==============================================================
+# 1. POLICY
+# ==============================================================
+
+step "Show the policy document" \
+     "The governance rules this disbursement is bound to." \
+     "cat fixtures/policy_v1.json"
+
+step "Derive policy_ref (sha256 over canonical bytes)" \
+     "policy_ref is a 32-byte identity — anyone can reproduce it." \
+     "sha256sum fixtures/policy_v1.canonical.bytes"
+
+# ==============================================================
+# 2. WALLET BALANCES (live Kupo)
+# ==============================================================
+
+step "Pool wallet balance (before)" \
+     "Sum lovelace across every unspent UTxO at the pool address." \
+     "curl -sS '$KUPO_URL/matches/$POOL_ADDR?unspent' \
+  | python3 -c 'import json,sys; rs=json.load(sys.stdin); c=sum(r[\"value\"][\"coins\"] for r in rs); print(f\"{c/1_000_000:.6f} tADA  ({c} lovelace, {len(rs)} UTxOs)\")'"
+
+# Snapshot receiver balance for the post-settlement delta.
 RECEIVER_BEFORE=$(curl -sS --max-time 10 "$KUPO_URL/matches/$RECEIVER_ADDR?unspent" 2>/dev/null \
   | python3 -c "import json,sys;print(sum(r['value']['coins'] for r in json.load(sys.stdin)))" 2>/dev/null || echo "")
 
-# ---- 3. ORACLE (reachability probe) ----
-phase "3. ORACLE (Charli3 ADA/USD, live Preprod)"
-if curl -sSfL --max-time 5 "$KUPO_URL/health" >/dev/null 2>&1; then
-  echo "  Kupo            : $KUPO_URL  [OK]"
-else
-  echo "  Kupo            : $KUPO_URL  [unreachable]"
-fi
+step "Receiver wallet balance (before)" \
+     "Same query against the receiver address." \
+     "curl -sS '$KUPO_URL/matches/$RECEIVER_ADDR?unspent' \
+  | python3 -c 'import json,sys; rs=json.load(sys.stdin); c=sum(r[\"value\"][\"coins\"] for r in rs); print(f\"{c/1_000_000:.6f} tADA  ({c} lovelace, {len(rs)} UTxOs)\")'"
 
-# ---- 4. SCENARIOS ----
+# ==============================================================
+# 3. ORACLE (live fetch, narrative)
+# ==============================================================
+
+step "Fetch the Charli3 AggState UTxO" \
+     "Locate the oracle UTxO holding the C3AS token (ADA/USD feed)." \
+     "curl -sS '$KUPO_URL/matches/$ORACLE_ADDR?unspent' \
+  | python3 -c 'import json,sys;
+for r in json.load(sys.stdin):
+    if any(k.endswith(\".$C3AS_SUFFIX\") for k in r[\"value\"][\"assets\"]):
+        print(\"tx_id      :\", r[\"transaction_id\"])
+        print(\"output_idx :\", r[\"output_index\"])
+        print(\"datum_hash :\", r[\"datum_hash\"])
+        break
+else:
+    print(\"no AggState UTxO found\")'"
+
+# ==============================================================
+# 4. SCENARIOS (Ziranity devnet consensus via smoke.sh)
+# ==============================================================
+
 ALLOW_OK=0
 DENY_OK=0
 
-run_smoke() {
-  local name="$1"
-  phase "4. SCENARIO — $name"
-  if [ "$DRY" = 1 ]; then
-    echo "  (--dry) skipping Ziranity devnet submit"
-    return 0
+if [ "$DRY" = 1 ] || [ ! -x "$SMOKE" ]; then
+  reason="--dry flag"
+  [ ! -x "$SMOKE" ] && reason="smoke.sh not found at $SMOKE"
+  skipped "smoke.sh allow" "Ziranity devnet submit + byte-identity diff ($reason)"
+  skipped "smoke.sh deny"  "Ziranity devnet submit + byte-identity diff ($reason)"
+else
+  if step "Scenario: allow (within cap)" \
+          "Submit allow_700_ada fixture to a 4-node Ziranity devnet; expect PASS (committed output bytes match the recorded fixture)." \
+          "'$SMOKE' allow"; then
+    ALLOW_OK=1
   fi
-  if [ ! -x "$SMOKE" ]; then
-    echo "  smoke.sh not found at:"
-    echo "    $SMOKE"
-    echo "  → skipping (install the Ziranity handover bundle)"
-    return 1
+  if step "Scenario: deny (over cap)" \
+          "Submit deny_900_ada fixture; expect PASS with the 3-byte Denied(ReleaseCapExceeded) envelope." \
+          "'$SMOKE' deny"; then
+    DENY_OK=1
   fi
-  "$SMOKE" "$name"
-}
+fi
 
-if run_smoke allow; then ALLOW_OK=1; fi || true
-if run_smoke deny;  then DENY_OK=1;  fi || true
+# ==============================================================
+# 5. CARDANO SETTLEMENT (allow path only)
+# ==============================================================
 
-# ---- 5. CARDANO SETTLEMENT (allow only) ----
 TX_ID=""
-if [ "$DRY" = 0 ] && [ "$ALLOW_OK" = 1 ]; then
-  phase "5. CARDANO SETTLEMENT (allow path)"
-  if [ -z "${POOL_MNEMONIC:-}" ]; then
-    echo "  POOL_MNEMONIC not set → skipping on-chain settlement"
-  elif [ ! -x "$VENV_PY" ]; then
-    echo "  .venv/bin/python not found → skipping on-chain settlement"
-  else
-    echo "  Submitting 700 ADA to wallet_3 via Ogmios ($OGMIOS_URL)..."
-    set +e
-    TX_ID="$("$VENV_PY" scripts/cardano_disburse.py \
-      --ogmios-url "$OGMIOS_URL" \
-      --pool-address "$POOL_ADDR" \
-      --destination-bytes-hex "$RECEIVER_HEX" \
-      --destination-length 57 \
-      --amount-lovelace 700000000 \
-      --intent-id "$(printf 'dd%.0s' {1..32})" 2>&1 | tail -1)"
-    rc=$?
-    set -e
-    if [ $rc -ne 0 ] || [ -z "$TX_ID" ] || ! [[ "$TX_ID" =~ ^[0-9a-f]{64}$ ]]; then
-      echo "  settlement failed (rc=$rc)"
-      TX_ID=""
-    else
-      echo "  tx_id           : $TX_ID"
-      echo "  cexplorer       : https://preprod.cexplorer.io/tx/$TX_ID"
-      echo
-      echo "  Waiting ~20 s for Preprod confirmation..."
-      sleep 20
-      echo "  curl query:"
-      echo "    curl -sS \"$KUPO_URL/matches/$RECEIVER_ADDR?unspent\""
-      echo
-      echo "  receiver balance now : $(balance_ada "$RECEIVER_ADDR")"
-      if [ -n "$RECEIVER_BEFORE" ]; then
-        RECEIVER_AFTER=$(curl -sS --max-time 10 "$KUPO_URL/matches/$RECEIVER_ADDR?unspent" 2>/dev/null \
-          | python3 -c "import json,sys;print(sum(r['value']['coins'] for r in json.load(sys.stdin)))" 2>/dev/null || echo "")
-        if [ -n "$RECEIVER_AFTER" ]; then
-          DELTA=$(( RECEIVER_AFTER - RECEIVER_BEFORE ))
-          DELTA_WHOLE=$(( DELTA / 1000000 ))
-          DELTA_FRAC=$(( DELTA % 1000000 ))
-          echo "  delta vs before      : +${DELTA_WHOLE}.$(printf '%06d' $DELTA_FRAC) tADA"
-        fi
+if [ "$DRY" = 1 ] || [ "$ALLOW_OK" = 0 ]; then
+  reason="--dry flag"
+  [ "$DRY" = 0 ] && reason="allow scenario did not pass"
+  skipped "Cardano settlement" "700 ADA disbursement tx ($reason)"
+elif [ -z "${POOL_MNEMONIC:-}" ]; then
+  skipped "Cardano settlement" "POOL_MNEMONIC not exported"
+elif [ ! -x "$VENV_PY" ]; then
+  skipped "Cardano settlement" ".venv/bin/python not found"
+else
+  step "Settle 700 ADA on Cardano Preprod" \
+       "Shell to scripts/cardano_disburse.py; prints the tx_id on success." \
+       "$VENV_PY scripts/cardano_disburse.py \\
+  --ogmios-url $OGMIOS_URL \\
+  --pool-address $POOL_ADDR \\
+  --destination-bytes-hex $RECEIVER_HEX \\
+  --destination-length 57 \\
+  --amount-lovelace 700000000 \\
+  --intent-id $(printf 'dd%.0s' {1..32}) \\
+  | tee /tmp/og-settle.out | tail -1"
+  TX_ID=$(tail -1 /tmp/og-settle.out 2>/dev/null || echo "")
+  if ! [[ "$TX_ID" =~ ^[0-9a-f]{64}$ ]]; then
+    TX_ID=""
+  fi
+
+  if [ -n "$TX_ID" ]; then
+    step "Wait for Preprod confirmation" \
+         "Rollback-safe depth is 2+ blocks (~40 s); we wait 25 s for one." \
+         "sleep 25 && echo waited 25s"
+
+    step "Receiver wallet balance (after)" \
+         "Re-query the receiver's UTxOs — balance should be +700 tADA." \
+         "curl -sS '$KUPO_URL/matches/$RECEIVER_ADDR?unspent' \
+  | python3 -c 'import json,sys; rs=json.load(sys.stdin); c=sum(r[\"value\"][\"coins\"] for r in rs); print(f\"{c/1_000_000:.6f} tADA  ({c} lovelace, {len(rs)} UTxOs)\")'"
+
+    if [ -n "$RECEIVER_BEFORE" ]; then
+      RECEIVER_AFTER=$(curl -sS --max-time 10 "$KUPO_URL/matches/$RECEIVER_ADDR?unspent" 2>/dev/null \
+        | python3 -c "import json,sys;print(sum(r['value']['coins'] for r in json.load(sys.stdin)))" 2>/dev/null || echo "")
+      if [ -n "$RECEIVER_AFTER" ]; then
+        DELTA=$(( RECEIVER_AFTER - RECEIVER_BEFORE ))
+        step "Delta vs pre-settlement snapshot" \
+             "Difference in lovelace between before and after." \
+             "echo '+$((DELTA / 1000000)).$(printf '%06d' $((DELTA % 1000000))) tADA  ($DELTA lovelace)'"
       fi
-      echo "  pool balance now     : $(balance_ada "$POOL_ADDR")"
     fi
   fi
 fi
 
-# ---- 6. OFFLINE VERIFIER ----
-phase "6. OFFLINE VERIFIER"
-echo "  Replaying 4 recorded evidence bundles..."
-VERIFIER_OUT="$(cargo test -p oracleguard-verifier verify_bundle_reports_clean --quiet 2>&1 || true)"
-if echo "$VERIFIER_OUT" | grep -q "test result: ok"; then
-  echo "  CLEAN — all bundles reproduce byte-for-byte"
-else
-  echo "  FAILED"
-  echo "$VERIFIER_OUT" | sed 's/^/    /'
-  exit 1
-fi
+# ==============================================================
+# 6. OFFLINE VERIFIER
+# ==============================================================
 
-# ---- 7. POLICY ROTATION (stretch) ----
+step "Replay all recorded evidence bundles through the verifier" \
+     "CLEAN means every recorded decision reproduces byte-for-byte." \
+     "cargo test -p oracleguard-verifier verify_bundle_reports_clean --quiet 2>&1 | tail -10"
+
+# ==============================================================
+# 7. POLICY ROTATION (optional)
+# ==============================================================
+
 if [ "$ROTATE" = 1 ]; then
-  phase "7. POLICY ROTATION (stretch)"
-  ROTATED_REF=$(python3 - <<'EOF'
+  step "Rotated policy_ref (cap 7500 → 10000)" \
+       "Re-canonicalize the policy with a raised cap; a policy change is observable via a new 32-byte policy_ref." \
+       "python3 -c '
 import json, hashlib
 rotated = {
-    "schema": "oracleguard.policy.v1",
-    "policy_version": 1,
-    "anchored_commitment": "katiba://policy/constitutional-release/v1",
-    "release_cap_basis_points": 10000,
-    "allowed_assets": ["ADA"],
+    \"schema\": \"oracleguard.policy.v1\",
+    \"policy_version\": 1,
+    \"anchored_commitment\": \"katiba://policy/constitutional-release/v1\",
+    \"release_cap_basis_points\": 10000,
+    \"allowed_assets\": [\"ADA\"],
 }
-canon = json.dumps(rotated, sort_keys=True, separators=(',', ':')).encode()
-print(hashlib.sha256(canon).hexdigest())
-EOF
-)
-  echo "  cap_bps 7500 → 10000   (policy rule change)"
-  echo "  original policy_ref : $POLICY_REF"
-  echo "  rotated  policy_ref : $ROTATED_REF"
-  echo "  → a policy change is observable via 32-byte policy_ref"
+canon = json.dumps(rotated, sort_keys=True, separators=(\",\", \":\")).encode()
+print(\"rotated canonical bytes:\", len(canon))
+print(\"rotated policy_ref     :\", hashlib.sha256(canon).hexdigest())
+print(\"original policy_ref    :\", open(\"fixtures/policy_v1.canonical.bytes\",\"rb\").read() and hashlib.sha256(open(\"fixtures/policy_v1.canonical.bytes\",\"rb\").read()).hexdigest())
+'"
 fi
 
-# ---- SUMMARY ----
-phase "SUMMARY"
-printf '  policy_ref   : %s\n' "$POLICY_REF"
+# ==============================================================
+# SUMMARY
+# ==============================================================
+
+echo
+echo '═══ SUMMARY'
 if [ "$DRY" = 1 ]; then
-  printf '  mode         : DRY (no devnet, no settlement)\n'
+  echo "    mode        : DRY (no devnet, no settlement)"
 else
-  printf '  allow smoke  : %s\n' "$([ "$ALLOW_OK" = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
-  printf '  deny smoke   : %s\n'  "$([ "$DENY_OK"  = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
-  if [ -n "$TX_ID" ]; then
-    printf '  cardano tx   : %s\n' "$TX_ID"
-  fi
+  echo "    allow smoke : $([ "$ALLOW_OK" = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
+  echo "    deny  smoke : $([ "$DENY_OK"  = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
+  [ -n "$TX_ID" ] && echo "    cardano tx  : $TX_ID" && \
+                     echo "    cexplorer   : https://preprod.cexplorer.io/tx/$TX_ID"
 fi
-printf '  verifier     : CLEAN\n'
+echo "    verifier    : CLEAN"
 echo
