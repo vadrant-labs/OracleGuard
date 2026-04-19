@@ -101,7 +101,7 @@ STEP_NUM=-1  # so Step 0 prints as "0", not "1"
 # interactive mode we replay it at the end so the full demo remains
 # visible for Q&A even though individual steps clear the screen.
 TRANSCRIPT_FILE=$(mktemp)
-trap 'rm -f "$TRANSCRIPT_FILE" "${PULL_STATE:-}" /tmp/og-charli3-aggregate.out /tmp/og-settle.out' EXIT
+trap 'rm -f "$TRANSCRIPT_FILE" "${PULL_STATE:-}" /tmp/og-charli3-aggregate.out /tmp/og-settle.out /tmp/og-smoke-allow.out /tmp/og-smoke-deny.out' EXIT
 
 # step <title> <description> <command>
 # Displays the title, description, and verbatim command. In
@@ -350,14 +350,22 @@ if [ "$DRY" = 1 ] || [ ! -x "$SMOKE" ]; then
 else
   if step "Consensus run: allow scenario (4-node Ziranity BFT devnet)" \
           "Submit allow_700_ada fixture to a 4-node Ziranity BFT devnet; expect PASS (committed output bytes match the recorded fixture)." \
-          "'$SMOKE' allow"; then
+          "'$SMOKE' allow 2>&1 | tee /tmp/og-smoke-allow.out"; then
     ALLOW_OK=1
   fi
   if step "Consensus run: deny scenario (4-node Ziranity BFT devnet)" \
           "Submit deny_900_ada fixture; expect PASS with the 3-byte Denied(ReleaseCapExceeded) envelope." \
-          "'$SMOKE' deny"; then
+          "'$SMOKE' deny 2>&1 | tee /tmp/og-smoke-deny.out"; then
     DENY_OK=1
   fi
+fi
+
+# Extract committed_height from smoke.sh's PASS line for the live-bundle
+# verifier step. Line format: "PASS scenario=allow height=N bytes=M".
+ALLOW_HEIGHT=""
+if [ "$ALLOW_OK" = 1 ] && [ -f /tmp/og-smoke-allow.out ]; then
+  ALLOW_HEIGHT=$(grep -oE 'height=[0-9]+' /tmp/og-smoke-allow.out 2>/dev/null \
+                 | head -1 | grep -oE '[0-9]+' || true)
 fi
 
 # ==============================================================
@@ -413,11 +421,30 @@ else
 fi
 
 # ==============================================================
-# 6. OFFLINE VERIFIER
+# 6. LIVE EVIDENCE BUNDLE (assembled from this run, real tx)
+# ==============================================================
+
+if [ -n "$TX_ID" ] && [ -n "$ALLOW_HEIGHT" ]; then
+  step "Assemble + verify a live evidence bundle from this run" \
+       "Use the real tx_hash from Phase 5 and the real committed_height from Phase 7's consensus run. The canonical intent + authorization bytes match the fixture smoke.sh just byte-diffed — so this is a real evidence bundle with real chain data (no placeholder fields). The offline verifier replays it the same way an independent auditor would." \
+       "cargo run -p oracleguard-adapter --example verify_live_bundle --quiet --release -- \
+  --intent-path integrations/ziranity/fixtures/integration/allow_700_ada_intent.postcard \
+  --auth-path   integrations/ziranity/fixtures/integration/allow_700_ada_result.postcard \
+  --tx-hash     $TX_ID \
+  --committed-height $ALLOW_HEIGHT"
+else
+  reason="no live tx"
+  [ -z "$ALLOW_HEIGHT" ] && reason="consensus did not commit"
+  [ "$DRY" = 1 ] && reason="--dry flag"
+  skipped "Assemble + verify a live evidence bundle from this run" "$reason"
+fi
+
+# ==============================================================
+# 7. OFFLINE VERIFIER (golden fixtures)
 # ==============================================================
 
 step "Offline verifier: walk each recorded evidence bundle" \
-     "For every recorded bundle: decode the canonical bytes, show what was recorded (intent_id, amount, oracle price, authorization verdict, execution outcome), recompute intent_id from the embedded intent, check the gate/reason cross-field invariants, and replay the evaluator to assert the recorded decision reproduces byte-for-byte." \
+     "For every recorded fixture bundle: decode, show what was recorded (intent_id, amount, oracle price, authorization verdict, execution outcome), recompute intent_id, check cross-field invariants, and replay the evaluator. Same verifier as the live-bundle step — these fixtures carry placeholder tx bytes because they were built at dev-time; the verifier doesn't check tx hashes against the chain, only internal consistency." \
      "cargo run -p oracleguard-verifier --example verify_bundles --quiet --release 2>&1"
 
 # ==============================================================

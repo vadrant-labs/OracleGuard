@@ -30,12 +30,7 @@ fn main() {
     let mut clean = 0;
     for (i, name) in BUNDLES.iter().enumerate() {
         let path = format!("fixtures/evidence/{name}");
-        println!(
-            "── Bundle {}/{}  {}",
-            i + 1,
-            BUNDLES.len(),
-            name
-        );
+        println!("── Bundle {}/{}  {}", i + 1, BUNDLES.len(), name);
         match load_bundle(Path::new(&path)) {
             Ok(evidence) => {
                 describe(&evidence);
@@ -56,11 +51,7 @@ fn main() {
         }
         println!();
     }
-    println!(
-        "summary: {}/{} bundles CLEAN",
-        clean,
-        BUNDLES.len()
-    );
+    println!("summary: {}/{} bundles CLEAN", clean, BUNDLES.len());
     if clean != BUNDLES.len() {
         std::process::exit(1);
     }
@@ -72,10 +63,7 @@ fn describe(e: &DisbursementEvidenceV1) {
         e.evidence_version,
         approx_bytes(e),
     );
-    println!(
-        "   intent_id              : {}",
-        hex32(&e.intent_id)
-    );
+    println!("   intent_id              : {}", hex32(&e.intent_id));
     println!(
         "   requested amount       : {} lovelace  ({} ADA)",
         e.intent.requested_amount_lovelace,
@@ -93,8 +81,14 @@ fn describe(e: &DisbursementEvidenceV1) {
         (e.intent.oracle_fact.price_microusd % 1_000_000) / 1_000,
     );
     println!("   committed height       : {}", e.committed_height);
-    println!("   authorization          : {}", describe_auth(&e.authorization));
-    println!("   execution              : {}", describe_exec(&e.execution));
+    println!(
+        "   authorization          : {}",
+        describe_auth(&e.authorization)
+    );
+    println!(
+        "   execution              : {}",
+        describe_exec(&e.execution)
+    );
     println!(
         "   checks                 : intent_id recompute + gate/reason invariants + replay evaluator"
     );
