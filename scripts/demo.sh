@@ -36,6 +36,9 @@
 # FLAGS
 #   -i, --interactive   pause for ENTER before/after each step
 #   --intro             print a scope banner at start (in/out of scope)
+#   --fast              skip the ~2 min on-demand aggregation; consume
+#                       the most recent on-chain AggState directly
+#                       (downstream steps still use live data)
 #   --dry               skip phase 4 (consensus) + phase 5 (settle)
 #   --rotate            add phase 7 (policy rotation)
 #   -h, --help          print this help and exit
@@ -169,12 +172,14 @@ INTERACTIVE=0
 DRY=0
 ROTATE=0
 INTRO=0
+FAST=0
 for a in "$@"; do
   case "$a" in
     -i|--interactive) INTERACTIVE=1 ;;
     --dry)            DRY=1 ;;
     --rotate)         ROTATE=1 ;;
     --intro)          INTRO=1 ;;
+    --fast)           FAST=1 ;;
     --help|-h)
       # Print the banner comment (everything from line 2 up to the
       # first `set -` line) with the leading "# " stripped.
@@ -448,6 +453,15 @@ PULL_REASON=$(sed -n '2p' "$PULL_STATE" 2>/dev/null || echo "readiness check did
 if [ "$DRY" = 1 ]; then
   PULL_MODE="fallback"
   PULL_REASON="--dry flag"
+elif [ "$FAST" = 1 ]; then
+  # --fast: skip the ~2 min on-demand aggregation + 45 s wait; consume
+  # the most recent on-chain AggState directly. Meant for live-demo
+  # runtime budgets where the aggregation could fail or simply be too
+  # slow. Everything downstream (consensus, settlement, offline
+  # verification) still runs against live data — we're just not the
+  # aggregator this time.
+  PULL_MODE="fallback"
+  PULL_REASON="--fast flag: skipping ~2 min aggregation, using existing on-chain AggState"
 elif [ "$PULL_MODE" = "fallback" ]; then
   # Readiness already wrote "fallback" + its reason to PULL_STATE;
   # PULL_REASON is already populated. Nothing to prompt — go straight
