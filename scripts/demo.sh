@@ -97,6 +97,12 @@ done
 
 STEP_NUM=-1  # so Step 0 prints as "0", not "1"
 
+# Transcript capture: every step's output gets tee'd here, and in
+# interactive mode we replay it at the end so the full demo remains
+# visible for Q&A even though individual steps clear the screen.
+TRANSCRIPT_FILE=$(mktemp)
+trap 'rm -f "$TRANSCRIPT_FILE" "${PULL_STATE:-}" /tmp/og-charli3-aggregate.out /tmp/og-settle.out' EXIT
+
 # step <title> <description> <command>
 # Displays the title, description, and verbatim command. In
 # interactive mode, waits for ENTER before running and again after
@@ -106,30 +112,35 @@ step() {
   local desc="$2"
   local cmd="$3"
   STEP_NUM=$((STEP_NUM + 1))
-  echo
-  printf '═══ STEP %d — %s\n' "$STEP_NUM" "$title"
-  printf '    %s\n' "$desc"
-  # Print the command verbatim, indented. First line gets '$ ' prefix.
-  printf '    $ %s\n' "$cmd" | awk 'NR==1{print; next} {print "        " $0}'
+  {
+    echo
+    printf '═══ STEP %d — %s\n' "$STEP_NUM" "$title"
+    printf '    %s\n' "$desc"
+    # Print the command verbatim, indented. First line gets '$ ' prefix.
+    printf '    $ %s\n' "$cmd" | awk 'NR==1{print; next} {print "        " $0}'
+  } | tee -a "$TRANSCRIPT_FILE"
   if [ "$INTERACTIVE" = 1 ]; then
     read -r -p '    [ENTER to run] ' _ < /dev/tty
   fi
-  echo   '    ─ output ─'
+  echo   '    ─ output ─' | tee -a "$TRANSCRIPT_FILE"
   set +e
-  eval "$cmd" 2>&1 | sed 's/^/    /'
+  eval "$cmd" 2>&1 | sed 's/^/    /' | tee -a "$TRANSCRIPT_FILE"
   local rc=${PIPESTATUS[0]}
   set -e
   if [ "$INTERACTIVE" = 1 ]; then
     read -r -p '    [ENTER for next step] ' _ < /dev/tty
+    clear
   fi
   return $rc
 }
 
 skipped() {
   STEP_NUM=$((STEP_NUM + 1))
-  echo
-  printf '═══ STEP %d — %s  [SKIPPED]\n' "$STEP_NUM" "$1"
-  printf '    %s\n' "$2"
+  {
+    echo
+    printf '═══ STEP %d — %s  [SKIPPED]\n' "$STEP_NUM" "$1"
+    printf '    %s\n' "$2"
+  } | tee -a "$TRANSCRIPT_FILE"
 }
 
 # ==============================================================
@@ -405,9 +416,9 @@ fi
 # 6. OFFLINE VERIFIER
 # ==============================================================
 
-step "Replay all recorded evidence bundles through the offline verifier" \
-     "Independent verification: load every recorded evidence bundle (allow, deny, reject-non-ada, reject-pending), replay the evaluator, and assert byte-for-byte reproduction. The '1 passed' below covers all four bundles — a single test iterates them internally." \
-     "cargo test -p oracleguard-verifier --lib verify_bundle_reports_clean --quiet 2>&1 | tail -5"
+step "Offline verifier: walk each recorded evidence bundle" \
+     "For every recorded bundle: decode the canonical bytes, show what was recorded (intent_id, amount, oracle price, authorization verdict, execution outcome), recompute intent_id from the embedded intent, check the gate/reason cross-field invariants, and replay the evaluator to assert the recorded decision reproduces byte-for-byte." \
+     "cargo run -p oracleguard-verifier --example verify_bundles --quiet --release 2>&1"
 
 # ==============================================================
 # 7. POLICY ROTATION (optional)
@@ -423,15 +434,35 @@ fi
 # SUMMARY
 # ==============================================================
 
-echo
-echo '═══ SUMMARY'
-if [ "$DRY" = 1 ]; then
-  echo "    mode        : DRY (no devnet, no settlement)"
-else
-  echo "    allow smoke : $([ "$ALLOW_OK" = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
-  echo "    deny  smoke : $([ "$DENY_OK"  = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
-  [ -n "$TX_ID" ] && echo "    cardano tx  : $TX_ID" && \
-                     echo "    cexplorer   : https://preprod.cexplorer.io/tx/$TX_ID"
+{
+  echo
+  echo '═══ SUMMARY'
+  if [ "$DRY" = 1 ]; then
+    echo "    mode         : DRY (no devnet, no settlement)"
+  else
+    echo "    pull path    : $PULL_MODE${PULL_REASON:+  ($PULL_REASON)}"
+    [ -n "${CHARLI3_TX_ID:-}" ] && echo "    charli3 tx   : $CHARLI3_TX_ID"
+    echo "    allow smoke  : $([ "$ALLOW_OK" = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
+    echo "    deny  smoke  : $([ "$DENY_OK"  = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
+    [ -n "$TX_ID" ] && echo "    cardano tx   : $TX_ID" && \
+                       echo "    cexplorer    : https://preprod.cexplorer.io/tx/$TX_ID"
+  fi
+  echo "    verifier     : CLEAN (4/4 recorded bundles reproduce)"
+  echo
+} | tee -a "$TRANSCRIPT_FILE"
+
+# ==============================================================
+# INTERACTIVE: REPLAY FULL TRANSCRIPT FOR Q&A
+# ==============================================================
+
+if [ "$INTERACTIVE" = 1 ]; then
+  read -r -p '    [ENTER to show full transcript for Q&A] ' _ < /dev/tty
+  clear
+  cat <<'EOF'
+════════════════════════════════════════════════════════════════════════
+  FULL TRANSCRIPT — every step above, in order, for Q&A reference
+════════════════════════════════════════════════════════════════════════
+EOF
+  cat "$TRANSCRIPT_FILE"
+  echo
 fi
-echo "    verifier    : CLEAN"
-echo
