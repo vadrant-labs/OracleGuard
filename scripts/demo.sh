@@ -453,17 +453,17 @@ else
     step "Active band + scenario amounts (live-derived)" \
          "The fixed policy applies to current market conditions. Live oracle price sets the active band (selected by the policy crate); the band's basis-points cap scopes how much of the 1000 ADA allocation can be released right now. Allow = 80% of cap (should Authorize); Deny = 110% of cap (should Deny ReleaseCapExceeded). All values below were emitted by build_live_scenario — the policy crate is the single source of truth for cap math." \
          "cat <<EOF
-live oracle price   : ${ORACLE_PRICE_MICROUSD} microusd  (~\$$((ORACLE_PRICE_MICROUSD / 1_000_000)).$(printf '%03d' $(((ORACLE_PRICE_MICROUSD % 1_000_000) / 1_000))))
+live oracle price   : ${ORACLE_PRICE_MICROUSD} microusd  (~\$$((ORACLE_PRICE_MICROUSD / 1000000)).$(printf '%03d' $(((ORACLE_PRICE_MICROUSD % 1000000) / 1000))))
 oracle expiry (ms)  : ${ORACLE_EXPIRY_MS}
-active band         : ${LIVE_BAND_BPS} bps   (cap = $((LIVE_CAP_LOVELACE / 1_000_000)) ADA of the 1000 ADA allocation)
+active band         : ${LIVE_BAND_BPS} bps   (cap = $((LIVE_CAP_LOVELACE / 1000000)) ADA of the 1000 ADA allocation)
 
 allow scenario
-  request           : $((ALLOW_AMOUNT_LOVELACE / 1_000_000)) ADA  (${ALLOW_AMOUNT_LOVELACE} lovelace)
+  request           : $((ALLOW_AMOUNT_LOVELACE / 1000000)) ADA  (${ALLOW_AMOUNT_LOVELACE} lovelace)
   intent_id         : ${ALLOW_INTENT_ID}
   evaluator verdict : ${ALLOW_VERDICT}
 
 deny scenario
-  request           : $((DENY_AMOUNT_LOVELACE / 1_000_000)) ADA  (${DENY_AMOUNT_LOVELACE} lovelace)
+  request           : $((DENY_AMOUNT_LOVELACE / 1000000)) ADA  (${DENY_AMOUNT_LOVELACE} lovelace)
   intent_id         : ${DENY_INTENT_ID}
   evaluator verdict : ${DENY_VERDICT}
 EOF" || true
@@ -596,8 +596,8 @@ fi
   if [ -n "${ORACLE_PRICE_MICROUSD:-}" ]; then
     printf '    live price   : %s microusd  (~$%d.%03d, band = %s bps)\n' \
       "$ORACLE_PRICE_MICROUSD" \
-      "$((ORACLE_PRICE_MICROUSD / 1_000_000))" \
-      "$(((ORACLE_PRICE_MICROUSD % 1_000_000) / 1_000))" \
+      "$((ORACLE_PRICE_MICROUSD / 1000000))" \
+      "$(((ORACLE_PRICE_MICROUSD % 1000000) / 1000))" \
       "${ALLOW_BAND_BPS:-?}"
   fi
   if [ "$DRY" = 1 ]; then
@@ -606,9 +606,9 @@ fi
     echo "    pull path    : $PULL_MODE${PULL_REASON:+  ($PULL_REASON)}"
     [ -n "${CHARLI3_TX_ID:-}" ] && echo "    charli3 tx   : $CHARLI3_TX_ID"
     [ -n "${ALLOW_AMOUNT_LOVELACE:-}" ] && \
-      echo "    allow amount : $((ALLOW_AMOUNT_LOVELACE / 1_000_000)) ADA (live-sized to 80% of cap)"
+      echo "    allow amount : $((ALLOW_AMOUNT_LOVELACE / 1000000)) ADA (live-sized to 80% of cap)"
     [ -n "${DENY_AMOUNT_LOVELACE:-}" ] && \
-      echo "    deny  amount : $((DENY_AMOUNT_LOVELACE / 1_000_000)) ADA (live-sized to 110% of cap)"
+      echo "    deny  amount : $((DENY_AMOUNT_LOVELACE / 1000000)) ADA (live-sized to 110% of cap)"
     echo "    allow smoke  : $([ "$ALLOW_OK" = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
     echo "    deny  smoke  : $([ "$DENY_OK"  = 1 ] && echo PASS || echo 'FAIL/SKIPPED')"
     [ -n "$TX_ID" ] && echo "    cardano tx   : $TX_ID" && \
